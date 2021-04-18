@@ -28,6 +28,7 @@ type tableState struct {
 	// checking the table's schema, and both trying to modify it, whether inconsistently, or to the same result.
 	sync.Mutex
 }
+
 func (ts *tableState) Columns() map[string]utils.Column {
 	cols := ts.columns.Load()
 	if cols == nil {

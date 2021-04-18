@@ -26,7 +26,7 @@ func TestTableManager_EnsureStructure(t *testing.T) {
 		p.AddColumnTemplates,
 		p.tableManager.table(t.Name()),
 		nil,
-		)
+	)
 	require.NoError(t, err)
 	require.Empty(t, missingCols)
 
@@ -74,7 +74,7 @@ func TestTableManager_MatchSource(t *testing.T) {
 	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
 
 	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
-	assert.Contains(t, p.tableManager.table(t.Name() + p.TagTableSuffix).Columns(), "tag")
+	assert.Contains(t, p.tableManager.table(t.Name()+p.TagTableSuffix).Columns(), "tag")
 	assert.Contains(t, p.tableManager.table(t.Name()).Columns(), "a")
 }
 

@@ -48,7 +48,7 @@ type Postgresql struct {
 	db              *pgxpool.Pool
 	tableManager    *TableManager
 
-	writeChan chan *TableSource
+	writeChan      chan *TableSource
 	writeWaitGroup *utils.WaitGroup
 
 	Logger telegraf.Logger
