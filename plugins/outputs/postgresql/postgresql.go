@@ -4,22 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/coocood/freecache"
 	"strings"
 	"time"
 
+	"github.com/coocood/freecache"
 	"github.com/jackc/pgconn"
-
-	"github.com/influxdata/telegraf/config"
-	"github.com/influxdata/telegraf/models"
-	"github.com/influxdata/telegraf/plugins/outputs/postgresql/template"
-
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 
 	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/config"
+	"github.com/influxdata/telegraf/models"
 	"github.com/influxdata/telegraf/plugins/outputs"
+	"github.com/influxdata/telegraf/plugins/outputs/postgresql/template"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
+	"github.com/influxdata/toml"
 )
 
 type dbh interface {
@@ -29,19 +28,93 @@ type dbh interface {
 	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
 }
 
+var sampleConfig = `
+  ## specify address via a url matching:
+  ##   postgres://[pqgotest[:password]]@localhost[/dbname]\
+  ##       ?sslmode=[disable|verify-ca|verify-full]
+  ## or a simple string:
+  ##   host=localhost user=pqotest password=... sslmode=... dbname=app_production
+  ##
+  ## All connection parameters are optional. Also supported are PG environment vars
+  ## e.g. PGPASSWORD, PGHOST, PGUSER, PGDATABASE 
+  ## all supported vars here: https://www.postgresql.org/docs/current/libpq-envars.html
+  ##
+  ## Non-standard parameters:
+  ##   pool_max_conns (default: 1) - Maximum size of connection pool for parallel (per-batch per-table) inserts.
+  ##   pool_min_conns (default: 0) - Minimum size of connection pool.
+  ##   pool_max_conn_lifetime (default: 0s) - Maximum age of a connection before closing.
+  ##   pool_max_conn_idle_time (default: 0s) - Maximum idle time of a connection before closing.
+  ##   pool_health_check_period (default: 0s) - Duration between health checks on idle connections.
+  ##
+  ## Without the dbname parameter, the driver will default to a database
+  ## with the same name as the user. This dbname is just for instantiating a
+  ## connection with the server and doesn't restrict the databases we are trying
+  ## to grab metrics for.
+  ##
+  #connection = "host=localhost user=postgres sslmode=verify-full"
+
+  ## Postgres schema to use.
+  schema = "public"
+
+  ## Store tags as foreign keys in the metrics table. Default is false.
+  tags_as_foreign_keys = false
+
+  ## Suffix to append to table name (measurement name) for the foreign tag table.
+  tag_table_suffix = "_tag"
+
+  ## Deny inserting metrics if the foreign tag can't be inserted.
+  foreign_tag_constraint = false
+
+  ## Store all tags as a JSONB object in a single 'tags' column.
+  tags_as_jsonb = false
+
+  ## Store all fields as a JSONB object in a single 'fields' column.
+  fields_as_jsonb = false
+
+  ## Templated statements to execute when creating a new table.
+  create_templates = [
+    '''CREATE TABLE {{.table}} ({{.columns}})''',
+  ]
+
+  ## Templated statements to execute when adding columns to a table.
+  ## Set to an empty list to disable. Points containing tags for which there is no column will be skipped. Points
+  ## containing fields for which there is no column will have the field omitted.
+  add_column_templates = [
+    '''ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}''',
+  ]
+
+  ## Templated statements to execute when creating a new tag table.
+  tag_table_create_templates = [
+    '''CREATE TABLE {{.table}} ({{.columns}}, PRIMARY KEY (tag_id))''',
+  ]
+
+  ## Templated statements to execute when adding columns to a tag table.
+  ## Set to an empty list to disable. Points containing tags for which there is no column will be skipped.
+  tag_table_add_column_templates = [
+    '''ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}''',
+  ]
+
+  ## When using pool_max_conns>1, an a temporary error occurs, the query is retried with an incremental backoff. This
+  ## controls the maximum backoff duration.
+  retry_max_backoff = "15s"
+
+  ## Enable & set the log level for the Postgres driver.
+  # log_level = "info" # trace, debug, info, warn, error, none
+`
+
 type Postgresql struct {
 	Connection                 string
 	Schema                     string
 	TagsAsForeignKeys          bool
+	TagTableSuffix             string
+	ForeignTagConstraint       bool
 	TagsAsJsonb                bool
 	FieldsAsJsonb              bool
 	CreateTemplates            []*template.Template
 	AddColumnTemplates         []*template.Template
 	TagTableCreateTemplates    []*template.Template
 	TagTableAddColumnTemplates []*template.Template
-	TagTableSuffix             string
 	RetryMaxBackoff            config.Duration
-	ForignTagConstraint        bool
 	LogLevel                   string
 
 	dbContext       context.Context
@@ -61,38 +134,17 @@ func init() {
 }
 
 func newPostgresql() *Postgresql {
-	return &Postgresql{
-		Schema:                     "public",
-		CreateTemplates:            []*template.Template{template.TableCreateTemplate},
-		AddColumnTemplates:         []*template.Template{template.TableAddColumnTemplate},
-		TagTableCreateTemplates:    []*template.Template{template.TagTableCreateTemplate},
-		TagTableAddColumnTemplates: []*template.Template{template.TableAddColumnTemplate},
-		TagTableSuffix:             "_tag",
-		RetryMaxBackoff:            config.Duration(time.Second * 15),
-		ForignTagConstraint:        false,
-		Logger:                     models.NewLogger("outputs", "postgresql", ""),
+	p := &Postgresql{
+		Logger: models.NewLogger("outputs", "postgresql", ""),
 	}
+	if err := toml.Unmarshal([]byte(p.SampleConfig()), p); err != nil {
+		panic(err.Error())
+	}
+	return p
 }
 
-// pgxLogger makes telegraf.Logger compatible with pgx.Logger
-type pgxLogger struct {
-	telegraf.Logger
-}
-
-func (l pgxLogger) Log(ctx context.Context, level pgx.LogLevel, msg string, data map[string]interface{}) {
-	switch level {
-	case pgx.LogLevelError:
-		l.Errorf("PG %s - %+v", msg, data)
-	case pgx.LogLevelWarn:
-		l.Warnf("PG %s - %+v", msg, data)
-	case pgx.LogLevelInfo, pgx.LogLevelNone:
-		l.Infof("PG %s - %+v", msg, data)
-	case pgx.LogLevelDebug, pgx.LogLevelTrace:
-		l.Debugf("PG %s - %+v", msg, data)
-	default:
-		l.Debugf("PG %s - %+v", msg, data)
-	}
-}
+func (p *Postgresql) SampleConfig() string { return sampleConfig }
+func (p *Postgresql) Description() string  { return "Send metrics to PostgreSQL" }
 
 // Connect establishes a connection to the target database and prepares the cache
 func (p *Postgresql) Connect() error {
@@ -107,7 +159,7 @@ func (p *Postgresql) Connect() error {
 	}
 
 	if p.LogLevel != "" {
-		poolConfig.ConnConfig.Logger = pgxLogger{p.Logger}
+		poolConfig.ConnConfig.Logger = utils.PGXLogger{p.Logger}
 		poolConfig.ConnConfig.LogLevel, err = pgx.LogLevelFromString(p.LogLevel)
 		if err != nil {
 			return fmt.Errorf("invalid log level")
@@ -140,7 +192,7 @@ func (p *Postgresql) Connect() error {
 	return nil
 }
 
-// Close closes the connection to the database
+// Close closes the connection(s) to the database.
 func (p *Postgresql) Close() error {
 	if p.writeChan != nil {
 		// We're using async mode. Gracefully close with timeout.
@@ -157,62 +209,6 @@ func (p *Postgresql) Close() error {
 	p.tableManager = nil
 	return nil
 }
-
-var sampleConfig = `
-  ## specify address via a url matching:
-  ##   postgres://[pqgotest[:password]]@localhost[/dbname]\
-  ##       ?sslmode=[disable|verify-ca|verify-full]
-  ## or a simple string:
-  ##   host=localhost user=pqotest password=... sslmode=... dbname=app_production
-  ##
-  ## All connection parameters are optional. Also supported are PG environment vars
-  ## e.g. PGPASSWORD, PGHOST, PGUSER, PGDATABASE 
-  ## all supported vars here: https://www.postgresql.org/docs/current/libpq-envars.html
-  ##
-  ## Non-standard parameters:
-  ##   pool_max_conns (default: 1) - Maximum size of connection pool for parallel (per-batch per-table) inserts.
-  ##   pool_min_conns (default: 0) - Minimum size of connection pool.
-  ##   pool_max_conn_lifetime (default: 0s) - Maximum age of a connection before closing.
-  ##   pool_max_conn_idle_time (default: 0s) - Maximum idle time of a connection before closing.
-  ##   pool_health_check_period (default: 0s) - Duration between health checks on idle connections.
-  ##
-  ## Without the dbname parameter, the driver will default to a database
-  ## with the same name as the user. This dbname is just for instantiating a
-  ## connection with the server and doesn't restrict the databases we are trying
-  ## to grab metrics for.
-  ##
-  connection = "host=localhost user=postgres sslmode=verify-full"
-
-  ## Store tags as foreign keys in the metrics table. Default is false.
-  # tags_as_foreignkeys = false
-
-  ## Schema to create the tables into
-  # schema = "public"
-
-  ## Use jsonb datatype for tags
-  # tags_as_jsonb = false
-
-  ## Use jsonb datatype for fields
-  # fields_as_jsonb = false
-
-  ## Templated statements to execute when creating a new table.
-  create_templates = ['CREATE TABLE {{.table}} ({{.columns}})']
-
-  ## Templated statements to execute when adding columns to a table.
-  ## Set to an empty list to disable. Points containing tags for which there is no column will be skipped. Points
-  ## containing fields for which there is no column will have the field omitted.
-  add_column_templates = ['ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}']
-
-  ## Templated statements to execute when creating a new tag table.
-  tag_table_create_templates = ['CREATE TABLE {{.table}} ({{.columns}}, PRIMARY KEY (tag_id))']
-
-  ## Templated statements to execute when adding columns to a tag table.
-  ## Set to an empty list to disable. Points containing tags for which there is no column will be skipped.
-  tag_table_add_column_templates = ['ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}']
-`
-
-func (p *Postgresql) SampleConfig() string { return sampleConfig }
-func (p *Postgresql) Description() string  { return "Send metrics to PostgreSQL" }
 
 func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 	tableSources := NewTableSources(p, metrics)
@@ -370,7 +366,7 @@ func (p *Postgresql) writeMetricsFromMeasure(ctx context.Context, db dbh, tableS
 
 	if p.TagsAsForeignKeys {
 		if err := p.WriteTagTable(ctx, db, tableSource); err != nil {
-			if p.ForignTagConstraint {
+			if p.ForeignTagConstraint {
 				return fmt.Errorf("writing to tag table '%s': %s", tableSource.Name()+p.TagTableSuffix, err)
 			} else {
 				// log and continue. As the admin can correct the issue, and tags don't change over time, they can be
