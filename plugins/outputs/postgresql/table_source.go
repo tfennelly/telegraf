@@ -378,7 +378,7 @@ func (ttsrc *TagTableSource) Reset() {
 	ttsrc.cursor = -1
 }
 
-func (ttsrc *TagTableSource) values() ([]interface{}) {
+func (ttsrc *TagTableSource) values() []interface{} {
 	tagID := ttsrc.tagIDs[ttsrc.cursor]
 	tagSet := ttsrc.tagSets[tagID]
 
