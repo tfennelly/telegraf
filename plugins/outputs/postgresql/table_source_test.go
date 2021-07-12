@@ -237,3 +237,42 @@ func TestTableSource_DropColumn_field(t *testing.T) {
 	assert.EqualValues(t, 3, row["b"])
 	assert.False(t, tsrc.Next())
 }
+
+func TestTableSource_InconsistentTags(t *testing.T) {
+	p := newPostgresqlTest(t)
+
+	metrics := []telegraf.Metric{
+		newMetric(t, "", MSS{"a": "1"}, MSI{"b": 2}),
+		newMetric(t, "", MSS{"c": "3"}, MSI{"d": 4}),
+	}
+	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+
+	trow := tSrcRow(tsrc)
+	assert.EqualValues(t, "1", trow["a"])
+	assert.EqualValues(t, nil, trow["c"])
+
+	trow = tSrcRow(tsrc)
+	assert.EqualValues(t, nil, trow["a"])
+	assert.EqualValues(t, "3", trow["c"])
+}
+
+func TestTagTableSource_InconsistentTags(t *testing.T) {
+	p := newPostgresqlTest(t)
+	p.TagsAsForeignKeys = true
+	p.tagsCache = freecache.NewCache(5 * 1024 * 1024)
+
+	metrics := []telegraf.Metric{
+		newMetric(t, "", MSS{"a": "1"}, MSI{"b": 2}),
+		newMetric(t, "", MSS{"c": "3"}, MSI{"d": 4}),
+	}
+	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	ttsrc := NewTagTableSource(tsrc)
+
+	ttrow := tSrcRow(ttsrc)
+	assert.EqualValues(t, "1", ttrow["a"])
+	assert.EqualValues(t, nil, ttrow["c"])
+
+	ttrow = tSrcRow(ttsrc)
+	assert.EqualValues(t, nil, ttrow["a"])
+	assert.EqualValues(t, "3", ttrow["c"])
+}

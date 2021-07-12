@@ -387,7 +387,7 @@ func (ttsrc *TagTableSource) values() []interface{} {
 
 	var values []interface{}
 	if !ttsrc.postgresql.TagsAsJsonb {
-		values = make([]interface{}, len(tagSet)+1)
+		values = make([]interface{}, len(ttsrc.TableSource.tagColumns.indices)+1)
 		for _, tag := range tagSet {
 			values[ttsrc.TableSource.tagColumns.indices[tag.Key]+1] = tag.Value // +1 to account for tag_id column
 		}
