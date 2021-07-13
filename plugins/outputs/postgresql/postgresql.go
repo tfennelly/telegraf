@@ -159,7 +159,7 @@ func (p *Postgresql) Connect() error {
 	}
 
 	if p.LogLevel != "" {
-		poolConfig.ConnConfig.Logger = utils.PGXLogger{p.Logger}
+		poolConfig.ConnConfig.Logger = utils.PGXLogger{Logger: p.Logger}
 		poolConfig.ConnConfig.LogLevel, err = pgx.LogLevelFromString(p.LogLevel)
 		if err != nil {
 			return fmt.Errorf("invalid log level")

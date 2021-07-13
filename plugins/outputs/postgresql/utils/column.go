@@ -1,5 +1,8 @@
 package utils
 
+// This is split out from the 'postgresql' package as its depended upon by both the 'postgresql' and
+// 'postgresql/template' packages.
+
 import (
 	"sort"
 	"strings"
@@ -28,22 +31,9 @@ type Column struct {
 	Role ColumnRole
 }
 
-//// TargetColumns contains all the information needed to map a collection of
-//// metrics who belong to the same Measurement.
-//type TargetColumns struct {
-//	// the names the columns will have in the database
-//	Names []string
-//	// column name -> order number. where to place each column in rows
-//	// batched to the db
-//	Target map[string]int
-//	// the data type of each column should have in the db. used when checking
-//	// if the schema matches or it needs updates
-//	DataTypes []PgDataType
-//	// the role each column has, helps properly map the metric to the db
-//	Roles []ColumnRole
-//}
-//
-
+// ColumnList implements sort.Interface.
+// Columns are sorted first into groups of time,tag_id,tags,fields, and then alphabetically within
+// each group.
 type ColumnList []Column
 
 func (cl ColumnList) Len() int {

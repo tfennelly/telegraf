@@ -13,14 +13,14 @@ const (
 	JSONColumnDataType   = utils.PgJSONb
 )
 
-var TimeColumn = utils.Column{TimeColumnName, TimeColumnDataType, utils.TimeColType}
-var TagIDColumn = utils.Column{TagIDColumnName, TagIDColumnDataType, utils.TagsIDColType}
-var FieldsJSONColumn = utils.Column{FieldsJSONColumnName, JSONColumnDataType, utils.FieldColType}
-var TagsJSONColumn = utils.Column{TagsJSONColumnName, JSONColumnDataType, utils.TagColType}
+var TimeColumn = utils.Column{Name: TimeColumnName, Type: TimeColumnDataType, Role: utils.TimeColType}
+var TagIDColumn = utils.Column{Name: TagIDColumnName, Type: TagIDColumnDataType, Role: utils.TagsIDColType}
+var FieldsJSONColumn = utils.Column{Name: FieldsJSONColumnName, Type: JSONColumnDataType, Role: utils.FieldColType}
+var TagsJSONColumn = utils.Column{Name: TagsJSONColumnName, Type: JSONColumnDataType, Role: utils.TagColType}
 
 func ColumnFromTag(key string, value interface{}) utils.Column {
-	return utils.Column{key, utils.DerivePgDatatype(value), utils.TagColType}
+	return utils.Column{Name: key, Type: utils.DerivePgDatatype(value), Role: utils.TagColType}
 }
 func ColumnFromField(key string, value interface{}) utils.Column {
-	return utils.Column{key, utils.DerivePgDatatype(value), utils.FieldColType}
+	return utils.Column{Name: key, Type: utils.DerivePgDatatype(value), Role: utils.FieldColType}
 }

@@ -100,8 +100,8 @@ func DerivePgDatatype(value interface{}) PgDataType {
 	}
 }
 
-// PgTypeCanContain tells you if one PostgreSQL data type can contain
-// the values of another without data loss.
+// PgTypeCanContain tells you if one PostgreSQL data type can contain the values of another without
+// significant data loss (e.g. a double can store an integer, but you may lose some precision).
 func PgTypeCanContain(canThis PgDataType, containThis PgDataType) bool {
 	switch canThis {
 	case containThis:
