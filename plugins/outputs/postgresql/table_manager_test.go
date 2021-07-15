@@ -2,7 +2,7 @@ package postgresql
 
 import (
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/plugins/outputs/postgresql/template"
+	"github.com/influxdata/telegraf/plugins/outputs/postgresql/sqltemplate"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -122,7 +122,7 @@ func TestTableManager_cache(t *testing.T) {
 // Verify that when alter statements are disabled and a metric comes in with a new tag key, that the tag is omitted.
 func TestTableManager_noAlterMissingTag(t *testing.T) {
 	p := newPostgresqlTest(t)
-	p.AddColumnTemplates = []*template.Template{}
+	p.AddColumnTemplates = []*sqltemplate.Template{}
 	require.NoError(t, p.Connect())
 
 	metrics := []telegraf.Metric{
@@ -145,7 +145,7 @@ func TestTableManager_noAlterMissingTag(t *testing.T) {
 func TestTableManager_noAlterMissingTagTableTag(t *testing.T) {
 	p := newPostgresqlTest(t)
 	p.TagsAsForeignKeys = true
-	p.TagTableAddColumnTemplates = []*template.Template{}
+	p.TagTableAddColumnTemplates = []*sqltemplate.Template{}
 	require.NoError(t, p.Connect())
 
 	metrics := []telegraf.Metric{
@@ -167,7 +167,7 @@ func TestTableManager_noAlterMissingTagTableTag(t *testing.T) {
 // verify that when alter statements are disabled and a metric comes in with a new field key, that the field is omitted.
 func TestTableManager_noAlterMissingField(t *testing.T) {
 	p := newPostgresqlTest(t)
-	p.AddColumnTemplates = []*template.Template{}
+	p.AddColumnTemplates = []*sqltemplate.Template{}
 	require.NoError(t, p.Connect())
 
 	metrics := []telegraf.Metric{

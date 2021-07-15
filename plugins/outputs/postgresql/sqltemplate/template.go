@@ -108,7 +108,7 @@ A very complex example for versions of TimescaleDB which don't support adding co
           WHERE t.tag_id = tt.tag_id''',
    ]
 */
-package template
+package sqltemplate
 
 import (
 	"bytes"

@@ -16,7 +16,7 @@ import (
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/models"
 	"github.com/influxdata/telegraf/plugins/outputs"
-	"github.com/influxdata/telegraf/plugins/outputs/postgresql/template"
+	"github.com/influxdata/telegraf/plugins/outputs/postgresql/sqltemplate"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 	"github.com/influxdata/toml"
 )
@@ -110,10 +110,10 @@ type Postgresql struct {
 	ForeignTagConstraint       bool
 	TagsAsJsonb                bool
 	FieldsAsJsonb              bool
-	CreateTemplates            []*template.Template
-	AddColumnTemplates         []*template.Template
-	TagTableCreateTemplates    []*template.Template
-	TagTableAddColumnTemplates []*template.Template
+	CreateTemplates            []*sqltemplate.Template
+	AddColumnTemplates         []*sqltemplate.Template
+	TagTableCreateTemplates    []*sqltemplate.Template
+	TagTableAddColumnTemplates []*sqltemplate.Template
 	RetryMaxBackoff            config.Duration
 	LogLevel                   string
 

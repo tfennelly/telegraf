@@ -7,7 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/influxdata/telegraf/plugins/outputs/postgresql/template"
+	"github.com/influxdata/telegraf/plugins/outputs/postgresql/sqltemplate"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 )
 
@@ -148,8 +148,8 @@ func (tm *TableManager) EnsureStructure(
 	db dbh,
 	tbl *tableState,
 	columns []utils.Column,
-	createTemplates []*template.Template,
-	addColumnsTemplates []*template.Template,
+	createTemplates []*sqltemplate.Template,
+	addColumnsTemplates []*sqltemplate.Template,
 	metricsTable *tableState,
 	tagsTable *tableState,
 ) ([]utils.Column, error) {
@@ -227,19 +227,19 @@ func (tm *TableManager) checkColumns(dbColumns map[string]utils.Column, srcColum
 func (tm *TableManager) executeTemplates(
 	ctx context.Context,
 	db dbh,
-	tmpls []*template.Template,
+	tmpls []*sqltemplate.Template,
 	tbl *tableState,
 	newColumns []utils.Column,
 	metricsTable *tableState,
 	tagsTable *tableState,
 ) error {
-	tmplTable := template.NewTable(tm.Schema, tbl.name, colMapToSlice(tbl.Columns()))
-	metricsTmplTable := template.NewTable(tm.Schema, metricsTable.name, colMapToSlice(metricsTable.Columns()))
-	var tagsTmplTable *template.Table
+	tmplTable := sqltemplate.NewTable(tm.Schema, tbl.name, colMapToSlice(tbl.Columns()))
+	metricsTmplTable := sqltemplate.NewTable(tm.Schema, metricsTable.name, colMapToSlice(metricsTable.Columns()))
+	var tagsTmplTable *sqltemplate.Table
 	if tagsTable != nil {
-		tagsTmplTable = template.NewTable(tm.Schema, tagsTable.name, colMapToSlice(tagsTable.Columns()))
+		tagsTmplTable = sqltemplate.NewTable(tm.Schema, tagsTable.name, colMapToSlice(tagsTable.Columns()))
 	} else {
-		tagsTmplTable = template.NewTable("", "", nil)
+		tagsTmplTable = sqltemplate.NewTable("", "", nil)
 	}
 
 	/* https://github.com/jackc/pgx/issues/872
@@ -300,7 +300,9 @@ func (tm *TableManager) executeTemplates(
 		if col.Role != utils.TagColType {
 			continue
 		}
-		if _, err := tx.Exec(ctx, "COMMENT ON COLUMN "+tmplTable.String()+"."+template.QuoteIdentifier(col.Name)+" IS 'tag'"); err != nil {
+		stmt := fmt.Sprintf("COMMENT ON COLUMN %s.%s IS 'tag'",
+			tmplTable.String(), sqltemplate.QuoteIdentifier(col.Name))
+		if _, err := tx.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("setting column role comment: %s", err)
 		}
 	}
