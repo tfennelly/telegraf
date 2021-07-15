@@ -3,6 +3,7 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"github.com/influxdata/telegraf/testutil"
 	"os"
 	"strings"
 	"sync"
@@ -15,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/metric"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 )
 
@@ -256,7 +256,7 @@ func newMetric(
 	tags map[string]string,
 	fields map[string]interface{},
 ) telegraf.Metric {
-	return metric.New(t.Name()+suffix, tags, fields, time.Now())
+	return testutil.MustMetric(t.Name()+suffix, tags, fields, time.Now())
 }
 
 type MSS = map[string]string
