@@ -185,26 +185,25 @@ func (tsrc *TableSource) ColumnNames() []string {
 func (tsrc *TableSource) DropColumn(col utils.Column) error {
 	switch col.Role {
 	case utils.TagColType:
-		tsrc.dropTagColumn(col)
+		return tsrc.dropTagColumn(col)
 	case utils.FieldColType:
-		tsrc.dropFieldColumn(col)
+		return tsrc.dropFieldColumn(col)
 	case utils.TimeColType, utils.TagsIDColType:
 		return fmt.Errorf("critical column \"%s\"", col.Name)
 	default:
 		return fmt.Errorf("internal error: unknown column \"%s\"", col.Name)
 	}
-	return nil
 }
 
 // Drops the tag column from conversion. Any metrics containing this tag will be skipped.
-func (tsrc *TableSource) dropTagColumn(col utils.Column) {
+func (tsrc *TableSource) dropTagColumn(col utils.Column) error {
 	if col.Role != utils.TagColType || tsrc.postgresql.TagsAsJsonb {
-		panic(fmt.Sprintf("Tried to perform an invalid tag drop. This should not have happened. measurement=%s tag=%s", tsrc.Name(), col.Name))
+		return fmt.Errorf("internal error: Tried to perform an invalid tag drop. measurement=%s tag=%s", tsrc.Name(), col.Name)
 	}
 	tsrc.droppedTagColumns = append(tsrc.droppedTagColumns, col.Name)
 
 	if !tsrc.tagColumns.Remove(col.Name) {
-		return
+		return nil
 	}
 
 	for setID, set := range tsrc.tagSets {
@@ -216,15 +215,17 @@ func (tsrc *TableSource) dropTagColumn(col utils.Column) {
 			}
 		}
 	}
+	return nil
 }
 
 // Drops the field column from conversion. Any metrics containing this field will have the field omitted.
-func (tsrc *TableSource) dropFieldColumn(col utils.Column) {
+func (tsrc *TableSource) dropFieldColumn(col utils.Column) error {
 	if col.Role != utils.FieldColType || tsrc.postgresql.FieldsAsJsonb {
-		panic(fmt.Sprintf("Tried to perform an invalid field drop. This should not have happened. measurement=%s field=%s", tsrc.Name(), col.Name))
+		return fmt.Errorf("internal error: Tried to perform an invalid field drop. measurement=%s field=%s", tsrc.Name(), col.Name)
 	}
 
 	tsrc.fieldColumns.Remove(col.Name)
+	return nil
 }
 
 func (tsrc *TableSource) Next() bool {
