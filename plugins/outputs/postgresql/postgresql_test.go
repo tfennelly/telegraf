@@ -184,23 +184,6 @@ func (la *LogAccumulator) Info(args ...interface{}) {
 var ctx = context.Background()
 
 func TestMain(m *testing.M) {
-	// Try and find the server.
-	// Try provided env vars & defaults first.
-	if c, err := pgx.Connect(ctx, ""); err != nil {
-		os.Setenv("PGHOST", "127.0.0.1")
-		os.Setenv("PGUSER", "postgres")
-		// Try the port used in docker-compose.yml first
-		os.Setenv("PGPORT", "5433")
-		if c, err := pgx.Connect(ctx, ""); err != nil {
-			// Fall back to the default port
-			os.Setenv("PGPORT", "5432")
-		} else {
-			c.Close(ctx)
-		}
-	} else {
-		c.Close(ctx)
-	}
-
 	if err := prepareDatabase("telegraf"); err != nil {
 		fmt.Fprintf(os.Stderr, "Error preparing database: %s\n", err)
 		os.Exit(1)
@@ -209,7 +192,7 @@ func TestMain(m *testing.M) {
 }
 
 func prepareDatabase(name string) error {
-	db, err := pgx.Connect(ctx, "")
+	db, err := pgx.Connect(ctx, os.Getenv("PGURI"))
 	if err != nil {
 		return err
 	}
