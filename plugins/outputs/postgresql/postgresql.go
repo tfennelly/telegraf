@@ -365,7 +365,7 @@ func (p *Postgresql) writeMetricsFromMeasure(ctx context.Context, db dbh, tableS
 	}
 
 	if p.TagsAsForeignKeys {
-		if err := p.WriteTagTable(ctx, db, tableSource); err != nil {
+		if err := p.writeTagTable(ctx, db, tableSource); err != nil {
 			if p.ForeignTagConstraint {
 				return fmt.Errorf("writing to tag table '%s': %s", tableSource.Name()+p.TagTableSuffix, err)
 			} else {
@@ -384,7 +384,7 @@ func (p *Postgresql) writeMetricsFromMeasure(ctx context.Context, db dbh, tableS
 	return nil
 }
 
-func (p *Postgresql) WriteTagTable(ctx context.Context, db dbh, tableSource *TableSource) error {
+func (p *Postgresql) writeTagTable(ctx context.Context, db dbh, tableSource *TableSource) error {
 	ttsrc := NewTagTableSource(tableSource)
 
 	// Check whether we have any tags to insert
