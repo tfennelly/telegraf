@@ -4,23 +4,23 @@ import "github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 
 // Column names and data types for standard fields (time, tag_id, tags, and fields)
 const (
-	TimeColumnName       = "time"
-	TimeColumnDataType   = utils.PgTimestampWithTimeZone
-	TagIDColumnName      = "tag_id"
-	TagIDColumnDataType  = utils.PgBigInt
-	TagsJSONColumnName   = "tags"
-	FieldsJSONColumnName = "fields"
-	JSONColumnDataType   = utils.PgJSONb
+	timeColumnName       = "time"
+	timeColumnDataType   = utils.PgTimestampWithTimeZone
+	tagIDColumnName      = "tag_id"
+	tagIDColumnDataType  = utils.PgBigInt
+	tagsJSONColumnName   = "tags"
+	fieldsJSONColumnName = "fields"
+	jsonColumnDataType   = utils.PgJSONb
 )
 
-var TimeColumn = utils.Column{Name: TimeColumnName, Type: TimeColumnDataType, Role: utils.TimeColType}
-var TagIDColumn = utils.Column{Name: TagIDColumnName, Type: TagIDColumnDataType, Role: utils.TagsIDColType}
-var FieldsJSONColumn = utils.Column{Name: FieldsJSONColumnName, Type: JSONColumnDataType, Role: utils.FieldColType}
-var TagsJSONColumn = utils.Column{Name: TagsJSONColumnName, Type: JSONColumnDataType, Role: utils.TagColType}
+var timeColumn = utils.Column{Name: timeColumnName, Type: timeColumnDataType, Role: utils.TimeColType}
+var tagIDColumn = utils.Column{Name: tagIDColumnName, Type: tagIDColumnDataType, Role: utils.TagsIDColType}
+var fieldsJSONColumn = utils.Column{Name: fieldsJSONColumnName, Type: jsonColumnDataType, Role: utils.FieldColType}
+var tagsJSONColumn = utils.Column{Name: tagsJSONColumnName, Type: jsonColumnDataType, Role: utils.TagColType}
 
-func ColumnFromTag(key string, value interface{}) utils.Column {
+func columnFromTag(key string, value interface{}) utils.Column {
 	return utils.Column{Name: key, Type: utils.DerivePgDatatype(value), Role: utils.TagColType}
 }
-func ColumnFromField(key string, value interface{}) utils.Column {
+func columnFromField(key string, value interface{}) utils.Column {
 	return utils.Column{Name: key, Type: utils.DerivePgDatatype(value), Role: utils.FieldColType}
 }

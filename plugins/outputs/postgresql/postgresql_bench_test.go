@@ -3,12 +3,13 @@ package postgresql
 import (
 	"context"
 	"fmt"
-	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/metric"
 	"math/rand"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/metric"
 )
 
 func BenchmarkPostgresql_sequential(b *testing.B) {

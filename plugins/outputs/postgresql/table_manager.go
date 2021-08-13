@@ -101,13 +101,13 @@ func (tm *TableManager) refreshTableStructure(ctx context.Context, db dbh, tbl *
 
 		role := utils.FieldColType
 		switch colName {
-		case TimeColumnName:
+		case timeColumnName:
 			role = utils.TimeColType
-		case TagIDColumnName:
+		case tagIDColumnName:
 			role = utils.TagsIDColType
-		case TagsJSONColumnName:
+		case tagsJSONColumnName:
 			role = utils.TagColType
-		case FieldsJSONColumnName:
+		case fieldsJSONColumnName:
 			role = utils.FieldColType
 		default:
 			// We don't want to monopolize the column comment (preventing user from storing other information there), so just look at the first word
@@ -242,36 +242,6 @@ func (tm *TableManager) executeTemplates(
 		tagsTmplTable = sqltemplate.NewTable("", "", nil)
 	}
 
-	/* https://github.com/jackc/pgx/issues/872
-	stmts := make([]string, len(tmpls))
-	batch := &pgx.Batch{}
-	for i, tmpl := range tmpls {
-		sql, err := tmpl.Render(tmplTable, newColumns, metricsTmplTable, tagsTmplTable)
-		if err != nil {
-			return err
-		}
-		stmts[i] = string(sql)
-		batch.Queue(stmts[i])
-	}
-
-	batch.Queue(refreshTableStructureStatement, tm.Schema, tableName)
-
-	batchResult := tm.db.SendBatch(ctx, batch)
-	defer batchResult.Close()
-
-	for i := 0; i < len(tmpls); i++ {
-		if x, err := batchResult.Exec(); err != nil {
-			return fmt.Errorf("executing `%.40s...`: %v %w", stmts[i], x, err)
-		}
-	}
-
-	rows, err := batchResult.Query()
-	if err != nil {
-		return fmt.Errorf("refreshing table: %w", err)
-	}
-	tm.refreshTableStructureResponse(tableName, rows)
-	*/
-
 	// Lock to prevent concurrency issues in postgres (pg_type_typname_nsp_index unique constraint; SQLSTATE 23505)
 	tm.schemaMutex.Lock()
 	defer tm.schemaMutex.Unlock()
@@ -358,7 +328,9 @@ func (tm *TableManager) MatchSource(ctx context.Context, db dbh, rowSource *Tabl
 				}
 				colDefs[i] = col.Name + " " + string(col.Type)
 			}
-			tm.Logger.Errorf("table '%s' is missing tag columns (dropping metrics): %s", tagTable.name, strings.Join(colDefs, ", "))
+			tm.Logger.Errorf("table '%s' is missing tag columns (dropping metrics): %s",
+				tagTable.name,
+				strings.Join(colDefs, ", "))
 		}
 	}
 
@@ -384,7 +356,9 @@ func (tm *TableManager) MatchSource(ctx context.Context, db dbh, rowSource *Tabl
 			}
 			colDefs[i] = col.Name + " " + string(col.Type)
 		}
-		tm.Logger.Errorf("table \"%s\" is missing columns (omitting fields): %s", metricTable.name, strings.Join(colDefs, ", "))
+		tm.Logger.Errorf("table \"%s\" is missing columns (omitting fields): %s",
+			metricTable.name,
+			strings.Join(colDefs, ", "))
 	}
 
 	return nil

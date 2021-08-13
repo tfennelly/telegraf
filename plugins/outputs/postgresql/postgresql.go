@@ -12,13 +12,14 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 
+	"github.com/influxdata/toml"
+
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/models"
 	"github.com/influxdata/telegraf/plugins/outputs"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/sqltemplate"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
-	"github.com/influxdata/toml"
 )
 
 type dbh interface {
@@ -103,19 +104,19 @@ var sampleConfig = `
 `
 
 type Postgresql struct {
-	Connection                 string
-	Schema                     string
-	TagsAsForeignKeys          bool
-	TagTableSuffix             string
-	ForeignTagConstraint       bool
-	TagsAsJsonb                bool
-	FieldsAsJsonb              bool
-	CreateTemplates            []*sqltemplate.Template
-	AddColumnTemplates         []*sqltemplate.Template
-	TagTableCreateTemplates    []*sqltemplate.Template
-	TagTableAddColumnTemplates []*sqltemplate.Template
-	RetryMaxBackoff            config.Duration
-	LogLevel                   string
+	Connection                 string                  `toml:"connection"`
+	Schema                     string                  `toml:"schema"`
+	TagsAsForeignKeys          bool                    `toml:"tags_as_foreign_keys"`
+	TagTableSuffix             string                  `toml:"tag_table_suffix"`
+	ForeignTagConstraint       bool                    `toml:"foreign_tag_constraint"`
+	TagsAsJsonb                bool                    `toml:"tags_as_jsonb"`
+	FieldsAsJsonb              bool                    `toml:"fields_as_jsonb"`
+	CreateTemplates            []*sqltemplate.Template `toml:"create_templates"`
+	AddColumnTemplates         []*sqltemplate.Template `toml:"add_column_templates"`
+	TagTableCreateTemplates    []*sqltemplate.Template `toml:"tag_table_create_templates"`
+	TagTableAddColumnTemplates []*sqltemplate.Template `toml:"tag_table_add_column_templates"`
+	RetryMaxBackoff            config.Duration         `toml:"retry_max_backoff"`
+	LogLevel                   string                  `toml:"log_level"`
 
 	dbContext       context.Context
 	dbContextCancel func()
@@ -126,7 +127,7 @@ type Postgresql struct {
 	writeChan      chan *TableSource
 	writeWaitGroup *utils.WaitGroup
 
-	Logger telegraf.Logger
+	Logger telegraf.Logger `toml:"-"`
 }
 
 func init() {

@@ -101,13 +101,13 @@ func (tsrc *TableSource) AddMetric(metric telegraf.Metric) {
 
 	if !tsrc.postgresql.TagsAsJsonb {
 		for _, t := range metric.TagList() {
-			tsrc.tagColumns.Add(ColumnFromTag(t.Key, t.Value))
+			tsrc.tagColumns.Add(columnFromTag(t.Key, t.Value))
 		}
 	}
 
 	if !tsrc.postgresql.FieldsAsJsonb {
 		for _, f := range metric.FieldList() {
-			tsrc.fieldColumns.Add(ColumnFromField(f.Key, f.Value))
+			tsrc.fieldColumns.Add(columnFromField(f.Key, f.Value))
 		}
 	}
 
@@ -126,7 +126,7 @@ func (tsrc *TableSource) TagColumns() []utils.Column {
 	var cols []utils.Column
 
 	if tsrc.postgresql.TagsAsJsonb {
-		cols = append(cols, TagsJSONColumn)
+		cols = append(cols, tagsJSONColumn)
 	} else {
 		cols = append(cols, tsrc.tagColumns.columns...)
 	}
@@ -142,17 +142,17 @@ func (tsrc *TableSource) FieldColumns() []utils.Column {
 // Returns the full column list, including time, tag id or tags, and fields.
 func (tsrc *TableSource) MetricTableColumns() []utils.Column {
 	cols := []utils.Column{
-		TimeColumn,
+		timeColumn,
 	}
 
 	if tsrc.postgresql.TagsAsForeignKeys {
-		cols = append(cols, TagIDColumn)
+		cols = append(cols, tagIDColumn)
 	} else {
 		cols = append(cols, tsrc.TagColumns()...)
 	}
 
 	if tsrc.postgresql.FieldsAsJsonb {
-		cols = append(cols, FieldsJSONColumn)
+		cols = append(cols, fieldsJSONColumn)
 	} else {
 		cols = append(cols, tsrc.FieldColumns()...)
 	}
@@ -162,7 +162,7 @@ func (tsrc *TableSource) MetricTableColumns() []utils.Column {
 
 func (tsrc *TableSource) TagTableColumns() []utils.Column {
 	cols := []utils.Column{
-		TagIDColumn,
+		tagIDColumn,
 	}
 
 	cols = append(cols, tsrc.TagColumns()...)

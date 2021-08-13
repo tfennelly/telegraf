@@ -1,12 +1,14 @@
 package postgresql
 
 import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/sqltemplate"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestTableManager_EnsureStructure(t *testing.T) {
@@ -14,8 +16,8 @@ func TestTableManager_EnsureStructure(t *testing.T) {
 	require.NoError(t, p.Connect())
 
 	cols := []utils.Column{
-		ColumnFromTag("foo", ""),
-		ColumnFromField("baz", 0),
+		columnFromTag("foo", ""),
+		columnFromField("baz", 0),
 	}
 	missingCols, err := p.tableManager.EnsureStructure(
 		ctx,
@@ -39,8 +41,8 @@ func TestTableManager_refreshTableStructure(t *testing.T) {
 	require.NoError(t, p.Connect())
 
 	cols := []utils.Column{
-		ColumnFromTag("foo", ""),
-		ColumnFromField("baz", 0),
+		columnFromTag("foo", ""),
+		columnFromField("baz", 0),
 	}
 	_, err := p.tableManager.EnsureStructure(
 		ctx,
