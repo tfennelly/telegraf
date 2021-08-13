@@ -2,13 +2,18 @@ package postgresql
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"github.com/influxdata/telegraf/testutil"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/influxdata/toml"
+
+	"github.com/influxdata/telegraf/testutil"
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -211,6 +216,7 @@ type PostgresqlTest struct {
 
 func newPostgresqlTest(tb testing.TB) *PostgresqlTest {
 	p := newPostgresql()
+	p.Init()
 	logger := NewLogAccumulator(tb)
 	p.Logger = logger
 	pt := &PostgresqlTest{Postgresql: *p}
@@ -218,6 +224,26 @@ func newPostgresqlTest(tb testing.TB) *PostgresqlTest {
 	pt.Connection = "database=telegraf"
 	pt.LogLevel = "debug"
 	return pt
+}
+
+// Verify that the documented defaults match the actual defaults.
+//
+// Sample config must be in the format documented in `docs/developers/SAMPLE_CONFIG.md`.
+func TestPostgresqlSampleConfig(t *testing.T) {
+	p1 := newPostgresql()
+	require.NoError(t, p1.Init())
+
+	p2 := newPostgresql()
+	re := regexp.MustCompile(`(?m)^\s*#`)
+	conf := re.ReplaceAllLiteralString(p1.SampleConfig(), "")
+	require.NoError(t, toml.Unmarshal([]byte(conf), p2))
+	require.NoError(t, p2.Init())
+
+	// Can't use assert.Equal() because it dives into unexported fields that contain unequal values.
+	// Serializing to JSON is effective as any differences will be visible in exported fields.
+	p1json, _ := json.Marshal(p1)
+	p2json, _ := json.Marshal(p2)
+	assert.JSONEq(t, string(p1json), string(p2json), "Sample config does not match default config")
 }
 
 func TestPostgresqlConnect(t *testing.T) {

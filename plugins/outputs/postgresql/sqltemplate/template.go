@@ -124,15 +124,6 @@ import (
 	"github.com/Masterminds/sprig"
 )
 
-// TableCreateTemplate is the default template used for creating new tables.
-var TableCreateTemplate = newTemplate(`CREATE TABLE {{.table}} ({{.columns}})`)
-
-// TagTableCreateTemplate is the default template used when creating a new tag table.
-var TagTableCreateTemplate = newTemplate(`CREATE TABLE {{.table}} ({{.columns}}, PRIMARY KEY (tag_id))`)
-
-// TableAddColumnTemplate is the default template used when adding new columns to an existing table.
-var TableAddColumnTemplate = newTemplate(`ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}`)
-
 var templateFuncs = map[string]interface{}{
 	"quoteIdentifier": QuoteIdentifier,
 	"quoteLiteral":    QuoteLiteral,

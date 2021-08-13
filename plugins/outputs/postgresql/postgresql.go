@@ -12,8 +12,6 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 
-	"github.com/influxdata/toml"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/models"
@@ -51,53 +49,51 @@ var sampleConfig = `
   ## with the same name as the user. This dbname is just for instantiating a
   ## connection with the server and doesn't restrict the databases we are trying
   ## to grab metrics for.
-  ##
-  #connection = "host=localhost user=postgres sslmode=verify-full"
 
   ## Postgres schema to use.
-  schema = "public"
+  # schema = "public"
 
   ## Store tags as foreign keys in the metrics table. Default is false.
-  tags_as_foreign_keys = false
+  # tags_as_foreign_keys = false
 
   ## Suffix to append to table name (measurement name) for the foreign tag table.
-  tag_table_suffix = "_tag"
+  # tag_table_suffix = "_tag"
 
   ## Deny inserting metrics if the foreign tag can't be inserted.
-  foreign_tag_constraint = false
+  # foreign_tag_constraint = false
 
   ## Store all tags as a JSONB object in a single 'tags' column.
-  tags_as_jsonb = false
+  # tags_as_jsonb = false
 
   ## Store all fields as a JSONB object in a single 'fields' column.
-  fields_as_jsonb = false
+  # fields_as_jsonb = false
 
   ## Templated statements to execute when creating a new table.
-  create_templates = [
-    '''CREATE TABLE {{.table}} ({{.columns}})''',
-  ]
+  # create_templates = [
+  #   '''CREATE TABLE {{.table}} ({{.columns}})''',
+  # ]
 
   ## Templated statements to execute when adding columns to a table.
   ## Set to an empty list to disable. Points containing tags for which there is no column will be skipped. Points
   ## containing fields for which there is no column will have the field omitted.
-  add_column_templates = [
-    '''ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}''',
-  ]
+  # add_column_templates = [
+  #   '''ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}''',
+  # ]
 
   ## Templated statements to execute when creating a new tag table.
-  tag_table_create_templates = [
-    '''CREATE TABLE {{.table}} ({{.columns}}, PRIMARY KEY (tag_id))''',
-  ]
+  # tag_table_create_templates = [
+  #   '''CREATE TABLE {{.table}} ({{.columns}}, PRIMARY KEY (tag_id))''',
+  # ]
 
   ## Templated statements to execute when adding columns to a tag table.
   ## Set to an empty list to disable. Points containing tags for which there is no column will be skipped.
-  tag_table_add_column_templates = [
-    '''ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}''',
-  ]
+  # tag_table_add_column_templates = [
+  #   '''ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}''',
+  # ]
 
   ## When using pool_max_conns>1, an a temporary error occurs, the query is retried with an incremental backoff. This
   ## controls the maximum backoff duration.
-  retry_max_backoff = "15s"
+  # retry_max_backoff = "15s"
 
   ## Enable & set the log level for the Postgres driver.
   # log_level = "info" # trace, debug, info, warn, error, none
@@ -135,13 +131,60 @@ func init() {
 }
 
 func newPostgresql() *Postgresql {
-	p := &Postgresql{
-		Logger: models.NewLogger("outputs", "postgresql", ""),
+	return &Postgresql{}
+}
+
+func (p *Postgresql) Init() error {
+	if p.Schema == "" {
+		p.Schema = "public"
 	}
-	if err := toml.Unmarshal([]byte(p.SampleConfig()), p); err != nil {
-		panic(err.Error())
+
+	if p.TagTableSuffix == "" {
+		p.TagTableSuffix = "_tag"
 	}
-	return p
+
+	if p.CreateTemplates == nil {
+		t := &sqltemplate.Template{}
+		t.UnmarshalText([]byte(`CREATE TABLE {{.table}} ({{.columns}})`))
+		p.CreateTemplates = []*sqltemplate.Template{t}
+	}
+
+	if p.AddColumnTemplates == nil {
+		t := &sqltemplate.Template{}
+		t.UnmarshalText([]byte(`ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}`))
+		p.AddColumnTemplates = []*sqltemplate.Template{t}
+	}
+
+	if p.TagTableCreateTemplates == nil {
+		t := &sqltemplate.Template{}
+		t.UnmarshalText([]byte(`CREATE TABLE {{.table}} ({{.columns}}, PRIMARY KEY (tag_id))`))
+		p.TagTableCreateTemplates = []*sqltemplate.Template{t}
+	}
+
+	if p.TagTableAddColumnTemplates == nil {
+		t := &sqltemplate.Template{}
+		t.UnmarshalText([]byte(`ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}`))
+		p.TagTableAddColumnTemplates = []*sqltemplate.Template{t}
+	}
+
+	if p.RetryMaxBackoff == 0 {
+		p.RetryMaxBackoff = config.Duration(time.Second * 15)
+	}
+
+	if p.LogLevel == "" {
+		p.LogLevel = "info"
+	}
+
+	if p.TagTableAddColumnTemplates == nil {
+		t := &sqltemplate.Template{}
+		t.UnmarshalText([]byte(`ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}`))
+	}
+
+	if p.Logger == nil {
+		p.Logger = models.NewLogger("outputs", "postgresql", "")
+	}
+
+	return nil
 }
 
 func (p *Postgresql) SampleConfig() string { return sampleConfig }
