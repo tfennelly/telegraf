@@ -11,13 +11,10 @@ import (
 	"time"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/internal"
-	"github.com/influxdata/telegraf/plugins/common/tls"
+	httpconfig "github.com/influxdata/telegraf/plugins/common/http"
 	"github.com/influxdata/telegraf/plugins/outputs"
 	"github.com/influxdata/telegraf/plugins/serializers"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/clientcredentials"
 )
 
 const (
@@ -51,6 +48,15 @@ var sampleConfig = `
   ## Use TLS but skip chain & host verification
   # insecure_skip_verify = false
 
+  ## Optional Cookie authentication
+  # cookie_auth_url = "https://localhost/authMe"
+  # cookie_auth_method = "POST"
+  # cookie_auth_username = "username"
+  # cookie_auth_password = "pa$$word"
+  # cookie_auth_body = '{"username": "user", "password": "pa$$word", "authenticate": "me"}'
+  ## cookie_auth_renewal not set or set to "0" will auth once and never renew the cookie
+  # cookie_auth_renewal = "5m"
+
   ## Data format to output.
   ## Each data format has it's own unique set of configuration options, read
   ## more about them here:
@@ -80,18 +86,13 @@ const (
 
 type HTTP struct {
 	URL             string            `toml:"url"`
-	Timeout         config.Duration   `toml:"timeout"`
 	Method          string            `toml:"method"`
 	Username        string            `toml:"username"`
 	Password        string            `toml:"password"`
 	Headers         map[string]string `toml:"headers"`
-	ClientID        string            `toml:"client_id"`
-	ClientSecret    string            `toml:"client_secret"`
-	TokenURL        string            `toml:"token_url"`
-	Scopes          []string          `toml:"scopes"`
 	ContentEncoding string            `toml:"content_encoding"`
-	IdleConnTimeout config.Duration   `toml:"idle_conn_timeout"`
-	tls.ClientConfig
+	httpconfig.HTTPClientConfig
+	Log telegraf.Logger `toml:"-"`
 
 	client     *http.Client
 	serializer serializers.Serializer
@@ -99,35 +100,6 @@ type HTTP struct {
 
 func (h *HTTP) SetSerializer(serializer serializers.Serializer) {
 	h.serializer = serializer
-}
-
-func (h *HTTP) createClient(ctx context.Context) (*http.Client, error) {
-	tlsCfg, err := h.ClientConfig.TLSConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: tlsCfg,
-			Proxy:           http.ProxyFromEnvironment,
-			IdleConnTimeout: time.Duration(h.IdleConnTimeout),
-		},
-		Timeout: time.Duration(h.Timeout),
-	}
-
-	if h.ClientID != "" && h.ClientSecret != "" && h.TokenURL != "" {
-		oauthConfig := clientcredentials.Config{
-			ClientID:     h.ClientID,
-			ClientSecret: h.ClientSecret,
-			TokenURL:     h.TokenURL,
-			Scopes:       h.Scopes,
-		}
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, client)
-		client = oauthConfig.Client(ctx)
-	}
-
-	return client, nil
 }
 
 func (h *HTTP) Connect() error {
@@ -139,12 +111,8 @@ func (h *HTTP) Connect() error {
 		return fmt.Errorf("invalid method [%s] %s", h.URL, h.Method)
 	}
 
-	if h.Timeout == 0 {
-		h.Timeout = config.Duration(defaultClientTimeout)
-	}
-
 	ctx := context.Background()
-	client, err := h.createClient(ctx)
+	client, err := h.HTTPClientConfig.CreateClient(ctx, h.Log)
 	if err != nil {
 		return err
 	}
@@ -229,9 +197,8 @@ func (h *HTTP) write(reqBody []byte) error {
 func init() {
 	outputs.Add("http", func() telegraf.Output {
 		return &HTTP{
-			Timeout: config.Duration(defaultClientTimeout),
-			Method:  defaultMethod,
-			URL:     defaultURL,
+			Method: defaultMethod,
+			URL:    defaultURL,
 		}
 	})
 }

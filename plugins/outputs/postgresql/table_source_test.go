@@ -2,14 +2,16 @@ package postgresql
 
 import (
 	"encoding/json"
+	"testing"
+	"time"
+
 	"github.com/coocood/freecache"
-	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 	"github.com/jackc/pgx/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
+
+	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 )
 
 func TestTableSource(t *testing.T) {
@@ -29,7 +31,7 @@ type source interface {
 	ColumnNames() []string
 }
 
-func tSrcRow(src source) MSI {
+func nextSrcRow(src source) MSI {
 	if !src.Next() {
 		return nil
 	}
@@ -53,7 +55,7 @@ func TestTableSource_tagJSONB(t *testing.T) {
 	}
 
 	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
-	row := tSrcRow(tsrc)
+	row := nextSrcRow(tsrc)
 	require.NoError(t, tsrc.Err())
 
 	assert.IsType(t, time.Time{}, row["time"])
@@ -74,11 +76,11 @@ func TestTableSource_tagTable(t *testing.T) {
 
 	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
 	ttsrc := NewTagTableSource(tsrc)
-	ttrow := tSrcRow(ttsrc)
+	ttrow := nextSrcRow(ttsrc)
 	assert.EqualValues(t, "one", ttrow["a"])
 	assert.EqualValues(t, "two", ttrow["b"])
 
-	row := tSrcRow(tsrc)
+	row := nextSrcRow(tsrc)
 	assert.Equal(t, row["tag_id"], ttrow["tag_id"])
 }
 
@@ -94,7 +96,7 @@ func TestTableSource_tagTableJSONB(t *testing.T) {
 
 	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
 	ttsrc := NewTagTableSource(tsrc)
-	ttrow := tSrcRow(ttsrc)
+	ttrow := nextSrcRow(ttsrc)
 	var tags MSI
 	require.NoError(t, json.Unmarshal(ttrow["tags"].([]byte), &tags))
 	assert.EqualValues(t, MSI{"a": "one", "b": "two"}, tags)
@@ -109,7 +111,7 @@ func TestTableSource_fieldsJSONB(t *testing.T) {
 	}
 
 	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
-	row := tSrcRow(tsrc)
+	row := nextSrcRow(tsrc)
 	var fields MSI
 	require.NoError(t, json.Unmarshal(row["fields"].([]byte), &fields))
 	// json unmarshals numbers as floats
@@ -137,7 +139,7 @@ func TestTableSource_DropColumn_tag(t *testing.T) {
 	}
 	tsrc.DropColumn(col)
 
-	row := tSrcRow(tsrc)
+	row := nextSrcRow(tsrc)
 	assert.EqualValues(t, "one", row["a"])
 	assert.EqualValues(t, 2, row["v"])
 	assert.False(t, tsrc.Next())
@@ -168,11 +170,11 @@ func TestTableSource_DropColumn_tag_fkTrue_fcTrue(t *testing.T) {
 	tsrc.DropColumn(col)
 
 	ttsrc := NewTagTableSource(tsrc)
-	row := tSrcRow(ttsrc)
+	row := nextSrcRow(ttsrc)
 	assert.EqualValues(t, "one", row["a"])
 	assert.False(t, ttsrc.Next())
 
-	row = tSrcRow(tsrc)
+	row = nextSrcRow(tsrc)
 	assert.EqualValues(t, 2, row["v"])
 	assert.False(t, tsrc.Next())
 }
@@ -202,13 +204,13 @@ func TestTableSource_DropColumn_tag_fkTrue_fcFalse(t *testing.T) {
 	tsrc.DropColumn(col)
 
 	ttsrc := NewTagTableSource(tsrc)
-	row := tSrcRow(ttsrc)
+	row := nextSrcRow(ttsrc)
 	assert.EqualValues(t, "one", row["a"])
 	assert.False(t, ttsrc.Next())
 
-	row = tSrcRow(tsrc)
+	row = nextSrcRow(tsrc)
 	assert.EqualValues(t, 1, row["v"])
-	row = tSrcRow(tsrc)
+	row = nextSrcRow(tsrc)
 	assert.EqualValues(t, 2, row["v"])
 }
 
@@ -232,7 +234,7 @@ func TestTableSource_DropColumn_field(t *testing.T) {
 	}
 	tsrc.DropColumn(col)
 
-	row := tSrcRow(tsrc)
+	row := nextSrcRow(tsrc)
 	assert.EqualValues(t, "foo", row["tag"])
 	assert.EqualValues(t, 3, row["b"])
 	assert.False(t, tsrc.Next())
@@ -247,11 +249,11 @@ func TestTableSource_InconsistentTags(t *testing.T) {
 	}
 	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
 
-	trow := tSrcRow(tsrc)
+	trow := nextSrcRow(tsrc)
 	assert.EqualValues(t, "1", trow["a"])
 	assert.EqualValues(t, nil, trow["c"])
 
-	trow = tSrcRow(tsrc)
+	trow = nextSrcRow(tsrc)
 	assert.EqualValues(t, nil, trow["a"])
 	assert.EqualValues(t, "3", trow["c"])
 }
@@ -268,11 +270,17 @@ func TestTagTableSource_InconsistentTags(t *testing.T) {
 	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
 	ttsrc := NewTagTableSource(tsrc)
 
-	ttrow := tSrcRow(ttsrc)
-	assert.EqualValues(t, "1", ttrow["a"])
-	assert.EqualValues(t, nil, ttrow["c"])
+	// ttsrc is in non-deterministic order
+	expected := []MSI{
+		MSI{"a": "1", "c": nil},
+		MSI{"a": nil, "c": "3"},
+	}
 
-	ttrow = tSrcRow(ttsrc)
-	assert.EqualValues(t, nil, ttrow["a"])
-	assert.EqualValues(t, "3", ttrow["c"])
+	var actual []MSI
+	for row := nextSrcRow(ttsrc); row != nil; row = nextSrcRow(ttsrc) {
+		delete(row, "tag_id")
+		actual = append(actual, row)
+	}
+
+	assert.ElementsMatch(t, expected, actual)
 }
