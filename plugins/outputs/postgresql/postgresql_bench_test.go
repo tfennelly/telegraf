@@ -57,6 +57,7 @@ type batchGeneratorArgs struct {
 	tagCardinality   int
 	fieldCardinality int
 }
+
 // tagCardinality counts all the tag keys & values as one element. fieldCardinality counts all the field keys (not values) as one element.
 func batchGenerator(args batchGeneratorArgs) <-chan []telegraf.Metric {
 	tagSets := make([]MSS, args.tagCardinality)

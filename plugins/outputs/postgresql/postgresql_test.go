@@ -24,14 +24,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 )
 
-func timeout(t *testing.T, dur time.Duration) {
-	timer := time.AfterFunc(dur, func() {
-		t.Errorf("Test timed out after %s", dur)
-		t.FailNow()
-	})
-	t.Cleanup(func() { timer.Stop() })
-}
-
 type Log struct {
 	level  pgx.LogLevel
 	format string
@@ -190,7 +182,7 @@ var ctx = context.Background()
 
 func TestMain(m *testing.M) {
 	if err := prepareDatabase("telegraf"); err != nil {
-		fmt.Fprintf(os.Stderr, "Error preparing database: %s\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error preparing database: %s\n", err)
 		os.Exit(1)
 	}
 	os.Exit(m.Run())
@@ -216,7 +208,7 @@ type PostgresqlTest struct {
 
 func newPostgresqlTest(tb testing.TB) *PostgresqlTest {
 	p := newPostgresql()
-	p.Init()
+	_ = p.Init()
 	logger := NewLogAccumulator(tb)
 	p.Logger = logger
 	pt := &PostgresqlTest{Postgresql: *p}
@@ -318,7 +310,7 @@ func TestWrite_sequential(t *testing.T) {
 	stmtCount := 0
 	for _, log := range p.Logger.Logs() {
 		if strings.Contains(log.String(), "info: PG ") {
-			stmtCount += 1
+			stmtCount++
 		}
 	}
 	assert.Equal(t, 4, stmtCount) // BEGIN, COPY table _a, COPY table _b, COMMIT
@@ -341,7 +333,7 @@ func TestWrite_concurrent(t *testing.T) {
 	// Lock the table so that we ensure the writes hangs and the plugin has to open another connection.
 	tx, err := p.db.Begin(ctx)
 	require.NoError(t, err)
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 	_, err = tx.Exec(ctx, "LOCK TABLE "+utils.QuoteIdent(t.Name()+"_a"))
 	require.NoError(t, err)
 
@@ -361,7 +353,7 @@ func TestWrite_concurrent(t *testing.T) {
 
 	p.Logger.WaitForCopy(t.Name()+"_b", true)
 	// release the lock on table _a
-	tx.Rollback(ctx)
+	_ = tx.Rollback(ctx)
 	p.Logger.WaitForCopy(t.Name()+"_a", true)
 
 	dumpA := dbTableDump(t, p.db, "_a")
@@ -565,7 +557,7 @@ func TestWriteTagTable(t *testing.T) {
 	stmtCount := 0
 	for _, log := range p.Logger.Logs() {
 		if strings.Contains(log.String(), "info: PG ") {
-			stmtCount += 1
+			stmtCount++
 		}
 	}
 	assert.Equal(t, 3, stmtCount) // BEGIN, COPY metrics table, COMMIT

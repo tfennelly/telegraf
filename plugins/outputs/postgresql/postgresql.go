@@ -145,25 +145,25 @@ func (p *Postgresql) Init() error {
 
 	if p.CreateTemplates == nil {
 		t := &sqltemplate.Template{}
-		t.UnmarshalText([]byte(`CREATE TABLE {{.table}} ({{.columns}})`))
+		_ = t.UnmarshalText([]byte(`CREATE TABLE {{.table}} ({{.columns}})`))
 		p.CreateTemplates = []*sqltemplate.Template{t}
 	}
 
 	if p.AddColumnTemplates == nil {
 		t := &sqltemplate.Template{}
-		t.UnmarshalText([]byte(`ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}`))
+		_ = t.UnmarshalText([]byte(`ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}`))
 		p.AddColumnTemplates = []*sqltemplate.Template{t}
 	}
 
 	if p.TagTableCreateTemplates == nil {
 		t := &sqltemplate.Template{}
-		t.UnmarshalText([]byte(`CREATE TABLE {{.table}} ({{.columns}}, PRIMARY KEY (tag_id))`))
+		_ = t.UnmarshalText([]byte(`CREATE TABLE {{.table}} ({{.columns}}, PRIMARY KEY (tag_id))`))
 		p.TagTableCreateTemplates = []*sqltemplate.Template{t}
 	}
 
 	if p.TagTableAddColumnTemplates == nil {
 		t := &sqltemplate.Template{}
-		t.UnmarshalText([]byte(`ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}`))
+		_ = t.UnmarshalText([]byte(`ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}`))
 		p.TagTableAddColumnTemplates = []*sqltemplate.Template{t}
 	}
 
@@ -177,7 +177,7 @@ func (p *Postgresql) Init() error {
 
 	if p.TagTableAddColumnTemplates == nil {
 		t := &sqltemplate.Template{}
-		t.UnmarshalText([]byte(`ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}`))
+		_ = t.UnmarshalText([]byte(`ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}`))
 	}
 
 	if p.Logger == nil {
@@ -259,9 +259,8 @@ func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 
 	if p.db.Stat().MaxConns() > 1 {
 		return p.writeConcurrent(tableSources)
-	} else {
-		return p.writeSequential(tableSources)
 	}
+	return p.writeSequential(tableSources)
 }
 
 func (p *Postgresql) writeSequential(tableSources map[string]*TableSource) error {
@@ -269,7 +268,7 @@ func (p *Postgresql) writeSequential(tableSources map[string]*TableSource) error
 	if err != nil {
 		return fmt.Errorf("starting transaction: %w", err)
 	}
-	defer tx.Rollback(p.dbContext)
+	defer tx.Rollback(p.dbContext) //nolint:errcheck
 
 	for _, tableSource := range tableSources {
 		err := p.writeMetricsFromMeasure(p.dbContext, tx, tableSource)
@@ -346,7 +345,7 @@ func isTempError(err error) bool {
 		case "57": // Operator Intervention
 			return true
 		case "23": // Integrity Constraint Violation
-			switch pgErr.Code {
+			switch pgErr.Code { //nolint:revive
 			case "23505": // unique_violation
 				if strings.Contains(err.Error(), "pg_type_typname_nsp_index") {
 					// Happens when you try to create 2 tables simultaneously.
@@ -378,11 +377,12 @@ func (p *Postgresql) writeRetry(ctx context.Context, tableSource *TableSource) e
 
 		err = p.writeMetricsFromMeasure(ctx, tx, tableSource)
 		if err == nil {
-			tx.Commit(ctx)
-			return nil
+			if err := tx.Commit(ctx); err == nil {
+				return nil
+			}
 		}
 
-		tx.Rollback(ctx)
+		_ = tx.Rollback(ctx)
 		if !isTempError(err) {
 			return err
 		}
@@ -412,11 +412,10 @@ func (p *Postgresql) writeMetricsFromMeasure(ctx context.Context, db dbh, tableS
 		if err := p.writeTagTable(ctx, db, tableSource); err != nil {
 			if p.ForeignTagConstraint {
 				return fmt.Errorf("writing to tag table '%s': %s", tableSource.Name()+p.TagTableSuffix, err)
-			} else {
-				// log and continue. As the admin can correct the issue, and tags don't change over time, they can be
-				// added from future metrics after issue is corrected.
-				p.Logger.Errorf("writing to tag table '%s': %s", tableSource.Name()+p.TagTableSuffix, err)
 			}
+			// log and continue. As the admin can correct the issue, and tags don't change over time, they can be
+			// added from future metrics after issue is corrected.
+			p.Logger.Errorf("writing to tag table '%s': %s", tableSource.Name()+p.TagTableSuffix, err)
 		}
 	}
 
@@ -442,7 +441,7 @@ func (p *Postgresql) writeTagTable(ctx context.Context, db dbh, tableSource *Tab
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	ident := pgx.Identifier{ttsrc.postgresql.Schema, ttsrc.Name()}
 	identTemp := pgx.Identifier{ttsrc.Name() + "_temp"}

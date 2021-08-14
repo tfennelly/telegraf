@@ -17,15 +17,6 @@ import (
 func TestTableSource(t *testing.T) {
 }
 
-func indexOfStr(list []string, target string) int {
-	for i, v := range list {
-		if v == target {
-			return i
-		}
-	}
-	return -1
-}
-
 type source interface {
 	pgx.CopyFromSource
 	ColumnNames() []string
@@ -137,7 +128,7 @@ func TestTableSource_DropColumn_tag(t *testing.T) {
 			break
 		}
 	}
-	tsrc.DropColumn(col)
+	_ = tsrc.DropColumn(col)
 
 	row := nextSrcRow(tsrc)
 	assert.EqualValues(t, "one", row["a"])
@@ -167,7 +158,7 @@ func TestTableSource_DropColumn_tag_fkTrue_fcTrue(t *testing.T) {
 			break
 		}
 	}
-	tsrc.DropColumn(col)
+	_ = tsrc.DropColumn(col)
 
 	ttsrc := NewTagTableSource(tsrc)
 	row := nextSrcRow(ttsrc)
@@ -201,7 +192,7 @@ func TestTableSource_DropColumn_tag_fkTrue_fcFalse(t *testing.T) {
 			break
 		}
 	}
-	tsrc.DropColumn(col)
+	_ = tsrc.DropColumn(col)
 
 	ttsrc := NewTagTableSource(tsrc)
 	row := nextSrcRow(ttsrc)
@@ -232,7 +223,7 @@ func TestTableSource_DropColumn_field(t *testing.T) {
 			break
 		}
 	}
-	tsrc.DropColumn(col)
+	_ = tsrc.DropColumn(col)
 
 	row := nextSrcRow(tsrc)
 	assert.EqualValues(t, "foo", row["tag"])
@@ -272,8 +263,8 @@ func TestTagTableSource_InconsistentTags(t *testing.T) {
 
 	// ttsrc is in non-deterministic order
 	expected := []MSI{
-		MSI{"a": "1", "c": nil},
-		MSI{"a": nil, "c": "3"},
+		{"a": "1", "c": nil},
+		{"a": nil, "c": "3"},
 	}
 
 	var actual []MSI

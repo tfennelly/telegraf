@@ -379,21 +379,13 @@ func (cols Columns) Fields() Columns {
 func (cols Columns) Hash() string {
 	hash := fnv.New32a()
 	for _, tc := range cols.Sorted() {
-		hash.Write([]byte(tc.Name))
-		hash.Write([]byte{0})
+		_, _ = hash.Write([]byte(tc.Name))
+		_, _ = hash.Write([]byte{0})
 	}
 	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(hash.Sum(nil)))
 }
 
 type Template template.Template
-
-func newTemplate(templateString string) *Template {
-	t := &Template{}
-	if err := t.UnmarshalText([]byte(templateString)); err != nil {
-		panic(err)
-	}
-	return t
-}
 
 func (t *Template) UnmarshalText(text []byte) error {
 	tmpl := template.New("")

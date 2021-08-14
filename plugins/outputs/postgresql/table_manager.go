@@ -143,6 +143,7 @@ func (tm *TableManager) refreshTableStructure(ctx context.Context, db dbh, tbl *
 // metricsTableName and tagsTableName are passed to the templates.
 //
 // If the table cannot be modified, the returned column list is the columns which are missing from the table.
+//nolint:revive
 func (tm *TableManager) EnsureStructure(
 	ctx context.Context,
 	db dbh,
@@ -224,6 +225,7 @@ func (tm *TableManager) checkColumns(dbColumns map[string]utils.Column, srcColum
 	return missingColumns, nil
 }
 
+//nolint:revive
 func (tm *TableManager) executeTemplates(
 	ctx context.Context,
 	db dbh,
@@ -250,7 +252,7 @@ func (tm *TableManager) executeTemplates(
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	for _, tmpl := range tmpls {
 		sql, err := tmpl.Render(tmplTable, newColumns, metricsTmplTable, tagsTmplTable)

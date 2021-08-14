@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
-	"log"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -95,7 +94,6 @@ func DerivePgDatatype(value interface{}) PgDataType {
 	case time.Time:
 		return PgTimestampWithTimeZone
 	default:
-		log.Printf("E! Unknown datatype %T(%v)", value, value)
 		return PgText
 	}
 }

@@ -235,9 +235,9 @@ func (tsrc *TableSource) Next() bool {
 			tsrc.cursorError = nil
 			return false
 		}
-		tsrc.cursor += 1
+		tsrc.cursor++
 
-		tsrc.cursorValues, tsrc.cursorError = tsrc.values()
+		tsrc.cursorValues, tsrc.cursorError = tsrc.getValues()
 		if tsrc.cursorValues != nil || tsrc.cursorError != nil {
 			return true
 		}
@@ -248,9 +248,9 @@ func (tsrc *TableSource) Reset() {
 	tsrc.cursor = -1
 }
 
-// values calculates the values for the metric at the cursor position.
+// getValues calculates the values for the metric at the cursor position.
 // If the metric cannot be emitted, such as due to dropped tags, or all fields dropped, the return value is nil.
-func (tsrc *TableSource) values() ([]interface{}, error) {
+func (tsrc *TableSource) getValues() ([]interface{}, error) {
 	metric := tsrc.metrics[tsrc.cursor]
 
 	values := []interface{}{
@@ -364,14 +364,14 @@ func (ttsrc *TagTableSource) Next() bool {
 			ttsrc.cursorValues = nil
 			return false
 		}
-		ttsrc.cursor += 1
+		ttsrc.cursor++
 
 		if _, err := ttsrc.postgresql.tagsCache.GetInt(ttsrc.tagIDs[ttsrc.cursor]); err == nil {
 			// tag ID already inserted
 			continue
 		}
 
-		ttsrc.cursorValues = ttsrc.values()
+		ttsrc.cursorValues = ttsrc.getValues()
 		if ttsrc.cursorValues != nil {
 			return true
 		}
@@ -382,7 +382,7 @@ func (ttsrc *TagTableSource) Reset() {
 	ttsrc.cursor = -1
 }
 
-func (ttsrc *TagTableSource) values() []interface{} {
+func (ttsrc *TagTableSource) getValues() []interface{} {
 	tagID := ttsrc.tagIDs[ttsrc.cursor]
 	tagSet := ttsrc.tagSets[tagID]
 
@@ -407,7 +407,7 @@ func (ttsrc *TagTableSource) Values() ([]interface{}, error) {
 
 func (ttsrc *TagTableSource) UpdateCache() {
 	for _, tagID := range ttsrc.tagIDs {
-		ttsrc.postgresql.tagsCache.SetInt(tagID, nil, 0)
+		_ = ttsrc.postgresql.tagsCache.SetInt(tagID, nil, 0)
 	}
 }
 
