@@ -3,6 +3,7 @@ package postgresql
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"regexp"
@@ -181,6 +182,23 @@ func (la *LogAccumulator) Info(args ...interface{}) {
 var ctx = context.Background()
 
 func TestMain(m *testing.M) {
+	flag.Parse()
+	if testing.Short() {
+		return
+	}
+
+	// Use the integration server if no other PG addr env vars specified.
+	pguri := "postgresql://localhost:5432"
+	for _, varname := range []string{"PGURI", "PGHOST", "PGHOSTADDR", "PGPORT"} {
+		if os.Getenv(varname) != "" {
+			pguri = ""
+			break
+		}
+	}
+	if pguri != "" {
+		_ = os.Setenv("PGURI", pguri)
+	}
+
 	if err := prepareDatabase("telegraf"); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error preparing database: %s\n", err)
 		os.Exit(1)
@@ -207,6 +225,11 @@ type PostgresqlTest struct {
 }
 
 func newPostgresqlTest(tb testing.TB) *PostgresqlTest {
+	if testing.Short() {
+		tb.Skipf("skipping integration test in short mode")
+		tb.SkipNow()
+	}
+
 	p := newPostgresql()
 	_ = p.Init()
 	logger := NewLogAccumulator(tb)
