@@ -314,12 +314,6 @@ func (p *Postgresql) writeWorker(ctx context.Context) {
 	}
 }
 
-// This is a subset of net.Error
-type maybeTempError interface {
-	error
-	Temporary() bool
-}
-
 // isTempError reports whether the error received during a metric write operation is temporary or permanent.
 // A temporary error is one that if the write were retried at a later time, that it might succeed.
 // Note however that this applies to the transaction as a whole, not the individual operation. Meaning for example a
@@ -357,8 +351,8 @@ func isTempError(err error) bool {
 		return false
 	}
 
-	if mtErr := maybeTempError(nil); errors.As(err, &mtErr) {
-		return mtErr.Temporary()
+	if err, ok := err.(interface{ Temporary() bool }); ok {
+		return err.Temporary()
 	}
 
 	// Assume that any other error is permanent.
