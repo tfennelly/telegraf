@@ -213,13 +213,10 @@ func (tm *TableManager) EnsureStructure(
 func (tm *TableManager) checkColumns(dbColumns map[string]utils.Column, srcColumns []utils.Column) ([]utils.Column, error) {
 	var missingColumns []utils.Column
 	for _, srcCol := range srcColumns {
-		dbCol, ok := dbColumns[srcCol.Name]
+		_, ok := dbColumns[srcCol.Name]
 		if !ok {
 			missingColumns = append(missingColumns, srcCol)
 			continue
-		}
-		if !utils.PgTypeCanContain(dbCol.Type, srcCol.Type) {
-			return nil, fmt.Errorf("column type '%s' cannot store '%s'", dbCol.Type, srcCol.Type)
 		}
 	}
 	return missingColumns, nil
