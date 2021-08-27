@@ -91,12 +91,12 @@ var sampleConfig = `
   #   '''ALTER TABLE {{.table}} ADD COLUMN IF NOT EXISTS {{.columns|join ", ADD COLUMN IF NOT EXISTS "}}''',
   # ]
 
-  ## When using pool_max_conns>1, an a temporary error occurs, the query is retried with an incremental backoff. This
+  ## When using pool_max_conns>1, and a temporary error occurs, the query is retried with an incremental backoff. This
   ## controls the maximum backoff duration.
   # retry_max_backoff = "15s"
 
   ## Enable & set the log level for the Postgres driver.
-  # log_level = "info" # trace, debug, info, warn, error, none
+  # log_level = "warn" # trace, debug, info, warn, error, none
 `
 
 type Postgresql struct {
@@ -172,7 +172,7 @@ func (p *Postgresql) Init() error {
 	}
 
 	if p.LogLevel == "" {
-		p.LogLevel = "info"
+		p.LogLevel = "warn"
 	}
 
 	if p.TagTableAddColumnTemplates == nil {
