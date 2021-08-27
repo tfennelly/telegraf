@@ -116,6 +116,7 @@ type Postgresql struct {
 
 	dbContext       context.Context
 	dbContextCancel func()
+	dbConfig        *pgxpool.Config
 	db              *pgxpool.Pool
 	tableManager    *TableManager
 	tagsCache       *freecache.Cache
@@ -184,6 +185,24 @@ func (p *Postgresql) Init() error {
 		p.Logger = models.NewLogger("outputs", "postgresql", "")
 	}
 
+	var err error
+	if p.dbConfig, err = pgxpool.ParseConfig(p.Connection); err != nil {
+		return err
+	}
+	parsedConfig, _ := pgx.ParseConfig(p.Connection)
+	if _, ok := parsedConfig.Config.RuntimeParams["pool_max_conns"]; !ok {
+		// The pgx default for pool_max_conns is 4. However we want to default to 1.
+		p.dbConfig.MaxConns = 1
+	}
+
+	if p.LogLevel != "" {
+		p.dbConfig.ConnConfig.Logger = utils.PGXLogger{Logger: p.Logger}
+		p.dbConfig.ConnConfig.LogLevel, err = pgx.LogLevelFromString(p.LogLevel)
+		if err != nil {
+			return fmt.Errorf("invalid log level")
+		}
+	}
+
 	return nil
 }
 
@@ -192,27 +211,10 @@ func (p *Postgresql) Description() string  { return "Send metrics to PostgreSQL"
 
 // Connect establishes a connection to the target database and prepares the cache
 func (p *Postgresql) Connect() error {
-	poolConfig, err := pgxpool.ParseConfig(p.Connection)
-	if err != nil {
-		return err
-	}
-	parsedConfig, _ := pgx.ParseConfig(p.Connection)
-	if _, ok := parsedConfig.Config.RuntimeParams["pool_max_conns"]; !ok {
-		// The pgx default for pool_max_conns is 4. However we want to default to 1.
-		poolConfig.MaxConns = 1
-	}
-
-	if p.LogLevel != "" {
-		poolConfig.ConnConfig.Logger = utils.PGXLogger{Logger: p.Logger}
-		poolConfig.ConnConfig.LogLevel, err = pgx.LogLevelFromString(p.LogLevel)
-		if err != nil {
-			return fmt.Errorf("invalid log level")
-		}
-	}
-
 	// Yes, we're not supposed to store the context. However since we don't receive a context, we have to.
 	p.dbContext, p.dbContextCancel = context.WithCancel(context.Background())
-	p.db, err = pgxpool.ConnectConfig(p.dbContext, poolConfig)
+	var err error
+	p.db, err = pgxpool.ConnectConfig(p.dbContext, p.dbConfig)
 	if err != nil {
 		p.Logger.Errorf("Couldn't connect to server\n%v", err)
 		return err
@@ -271,13 +273,30 @@ func (p *Postgresql) writeSequential(tableSources map[string]*TableSource) error
 	defer tx.Rollback(p.dbContext) //nolint:errcheck
 
 	for _, tableSource := range tableSources {
-		err := p.writeMetricsFromMeasure(p.dbContext, tx, tableSource)
+		sp := tx
+		if len(tableSources) > 1 {
+			// wrap each sub-batch in a savepoint so that if a permanent error is received, we can drop just that one sub-batch, and insert everything else.
+			sp, err = tx.Begin(p.dbContext)
+			if err != nil {
+				return fmt.Errorf("starting savepoint: %w", err)
+			}
+		}
+
+		err := p.writeMetricsFromMeasure(p.dbContext, sp, tableSource)
 		if err != nil {
 			if isTempError(err) {
+				// return so that telegraf will retry the whole batch
 				return err
 			}
 			p.Logger.Errorf("write error (permanent, dropping sub-batch): %v", err)
+			if len(tableSources) > 1 {
+				if err := sp.Rollback(p.dbContext); err != nil {
+					return err
+				}
+			}
 		}
+
+		// savepoints do not need to be committed (released), so save the round trip and skip it
 	}
 
 	if err := tx.Commit(p.dbContext); err != nil {
@@ -327,6 +346,17 @@ func isTempError(err error) bool {
 		// https://www.postgresql.org/docs/12/errcodes-appendix.html
 		errClass := pgErr.Code[:2]
 		switch errClass {
+		case "23": // Integrity Constraint Violation
+			switch pgErr.Code { //nolint:revive
+			case "23505": // unique_violation
+				if strings.Contains(err.Error(), "pg_type_typname_nsp_index") {
+					// Happens when you try to create 2 tables simultaneously.
+					return true
+				}
+			}
+		case "25": // Invalid Transaction State
+			// If we're here, this is a bug, but recoverable
+			return true
 		case "42": // Syntax Error or Access Rule Violation
 			switch pgErr.Code {
 			case "42701": // duplicate_column
@@ -338,14 +368,6 @@ func isTempError(err error) bool {
 			return true
 		case "57": // Operator Intervention
 			return true
-		case "23": // Integrity Constraint Violation
-			switch pgErr.Code { //nolint:revive
-			case "23505": // unique_violation
-				if strings.Contains(err.Error(), "pg_type_typname_nsp_index") {
-					// Happens when you try to create 2 tables simultaneously.
-					return true
-				}
-			}
 		}
 		// Assume that any other error that comes from postgres is a permanent error
 		return false

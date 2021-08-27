@@ -231,13 +231,14 @@ func newPostgresqlTest(tb testing.TB) *PostgresqlTest {
 	}
 
 	p := newPostgresql()
-	_ = p.Init()
+	p.Connection = "database=telegraf"
 	logger := NewLogAccumulator(tb)
 	p.Logger = logger
+	p.LogLevel = "debug"
+	require.NoError(tb, p.Init())
 	pt := &PostgresqlTest{Postgresql: *p}
 	pt.Logger = logger
-	pt.Connection = "database=telegraf"
-	pt.LogLevel = "debug"
+
 	return pt
 }
 
@@ -269,6 +270,7 @@ func TestPostgresqlConnect(t *testing.T) {
 
 	p = newPostgresqlTest(t)
 	p.Connection += " pool_max_conns=2"
+	_ = p.Init()
 	require.NoError(t, p.Connect())
 	assert.EqualValues(t, 2, p.db.Stat().MaxConns())
 	p.Close()
@@ -336,12 +338,12 @@ func TestWrite_sequential(t *testing.T) {
 			stmtCount++
 		}
 	}
-	assert.Equal(t, 4, stmtCount) // BEGIN, COPY table _a, COPY table _b, COMMIT
+	assert.Equal(t, 6, stmtCount) // BEGIN, SAVEPOINT, COPY table _a, SAVEPOINT, COPY table _b, COMMIT
 }
 
 func TestWrite_concurrent(t *testing.T) {
 	p := newPostgresqlTest(t)
-	p.Connection += " pool_max_conns=3"
+	p.dbConfig.MaxConns = 3
 	require.NoError(t, p.Connect())
 
 	// Write a metric so it creates a table we can lock.
@@ -429,7 +431,7 @@ func TestWrite_sequentialPermError(t *testing.T) {
 // Test that the bad metric is dropped, and the rest of the batch succeeds.
 func TestWrite_concurrentPermError(t *testing.T) {
 	p := newPostgresqlTest(t)
-	p.Connection += " pool_max_conns=2"
+	p.dbConfig.MaxConns = 2
 	require.NoError(t, p.Connect())
 
 	metrics := []telegraf.Metric{
@@ -501,7 +503,7 @@ func TestWrite_sequentialTempError(t *testing.T) {
 // Verify that when using concurrency, errors are not returned, but instead logged and automatically retried
 func TestWrite_concurrentTempError(t *testing.T) {
 	p := newPostgresqlTest(t)
-	p.Connection += " pool_max_conns=2"
+	p.dbConfig.MaxConns = 2
 	require.NoError(t, p.Connect())
 
 	// To avoid a race condition, we need to know when our goroutine has started listening to the log.
