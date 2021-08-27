@@ -7,7 +7,6 @@ import (
 	"hash/fnv"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/jackc/pgx/v4"
 
@@ -52,71 +51,6 @@ func FullTableName(schema, name string) pgx.Identifier {
 	}
 
 	return pgx.Identifier{name}
-}
-
-// Constants for naming PostgreSQL data types both in
-// their short and long versions.
-const (
-	PgBool                     = "boolean"
-	PgSmallInt                 = "smallint"
-	PgInteger                  = "integer"
-	PgBigInt                   = "bigint"
-	PgReal                     = "real"
-	PgDoublePrecision          = "double precision"
-	PgNumeric                  = "numeric"
-	PgText                     = "text"
-	PgTimestampWithTimeZone    = "timestamp with time zone"
-	PgTimestampWithoutTimeZone = "timestamp without time zone"
-	PgSerial                   = "serial"
-	PgJSONb                    = "jsonb"
-)
-
-// DerivePgDatatype returns the appropriate PostgreSQL data type
-// that could hold the value.
-func DerivePgDatatype(value interface{}) PgDataType {
-	switch value.(type) {
-	case bool:
-		return PgBool
-	case uint64:
-		return PgNumeric
-	case int64, int, uint, uint32:
-		return PgBigInt
-	case int32:
-		return PgInteger
-	case int16, int8:
-		return PgSmallInt
-	case float64:
-		return PgDoublePrecision
-	case float32:
-		return PgReal
-	case string:
-		return PgText
-	case time.Time:
-		return PgTimestampWithTimeZone
-	default:
-		return PgText
-	}
-}
-
-// PgTypeCanContain tells you if one PostgreSQL data type can contain the values of another without
-// significant data loss (e.g. a double can store an integer, but you may lose some precision).
-func PgTypeCanContain(canThis PgDataType, containThis PgDataType) bool {
-	switch canThis {
-	case containThis:
-		return true
-	case PgBigInt:
-		return containThis == PgInteger || containThis == PgSmallInt
-	case PgInteger:
-		return containThis == PgSmallInt
-	case PgDoublePrecision, PgReal: // You can store a real in a double, you just lose precision
-		return containThis == PgReal || containThis == PgBigInt || containThis == PgInteger || containThis == PgSmallInt
-	case PgNumeric:
-		return containThis == PgBigInt || containThis == PgSmallInt || containThis == PgInteger || containThis == PgReal || containThis == PgDoublePrecision
-	case PgTimestampWithTimeZone:
-		return containThis == PgTimestampWithoutTimeZone
-	default:
-		return false
-	}
 }
 
 // pgxLogger makes telegraf.Logger compatible with pgx.Logger

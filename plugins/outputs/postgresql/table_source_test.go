@@ -45,7 +45,7 @@ func TestTableSource_tagJSONB(t *testing.T) {
 		newMetric(t, "", MSS{"a": "one", "b": "two"}, MSI{"v": 1}),
 	}
 
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 	row := nextSrcRow(tsrc)
 	require.NoError(t, tsrc.Err())
 
@@ -65,7 +65,7 @@ func TestTableSource_tagTable(t *testing.T) {
 		newMetric(t, "", MSS{"a": "one", "b": "two"}, MSI{"v": 1}),
 	}
 
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 	ttsrc := NewTagTableSource(tsrc)
 	ttrow := nextSrcRow(ttsrc)
 	assert.EqualValues(t, "one", ttrow["a"])
@@ -85,7 +85,7 @@ func TestTableSource_tagTableJSONB(t *testing.T) {
 		newMetric(t, "", MSS{"a": "one", "b": "two"}, MSI{"v": 1}),
 	}
 
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 	ttsrc := NewTagTableSource(tsrc)
 	ttrow := nextSrcRow(ttsrc)
 	var tags MSI
@@ -101,7 +101,7 @@ func TestTableSource_fieldsJSONB(t *testing.T) {
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 1, "b": 2}),
 	}
 
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 	row := nextSrcRow(tsrc)
 	var fields MSI
 	require.NoError(t, json.Unmarshal(row["fields"].([]byte), &fields))
@@ -118,7 +118,7 @@ func TestTableSource_DropColumn_tag(t *testing.T) {
 		newMetric(t, "", MSS{"a": "one", "b": "two"}, MSI{"v": 1}),
 		newMetric(t, "", MSS{"a": "one"}, MSI{"v": 2}),
 	}
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 
 	// Drop column "b"
 	var col utils.Column
@@ -148,7 +148,7 @@ func TestTableSource_DropColumn_tag_fkTrue_fcTrue(t *testing.T) {
 		newMetric(t, "", MSS{"a": "one", "b": "two"}, MSI{"v": 1}),
 		newMetric(t, "", MSS{"a": "one"}, MSI{"v": 2}),
 	}
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 
 	// Drop column "b"
 	var col utils.Column
@@ -182,7 +182,7 @@ func TestTableSource_DropColumn_tag_fkTrue_fcFalse(t *testing.T) {
 		newMetric(t, "", MSS{"a": "one", "b": "two"}, MSI{"v": 1}),
 		newMetric(t, "", MSS{"a": "one"}, MSI{"v": 2}),
 	}
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 
 	// Drop column "b"
 	var col utils.Column
@@ -213,7 +213,7 @@ func TestTableSource_DropColumn_field(t *testing.T) {
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 1}),
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 2, "b": 3}),
 	}
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 
 	// Drop column "a"
 	var col utils.Column
@@ -238,7 +238,7 @@ func TestTableSource_InconsistentTags(t *testing.T) {
 		newMetric(t, "", MSS{"a": "1"}, MSI{"b": 2}),
 		newMetric(t, "", MSS{"c": "3"}, MSI{"d": 4}),
 	}
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 
 	trow := nextSrcRow(tsrc)
 	assert.EqualValues(t, "1", trow["a"])
@@ -258,7 +258,7 @@ func TestTagTableSource_InconsistentTags(t *testing.T) {
 		newMetric(t, "", MSS{"a": "1"}, MSI{"b": 2}),
 		newMetric(t, "", MSS{"c": "3"}, MSI{"d": 4}),
 	}
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 	ttsrc := NewTagTableSource(tsrc)
 
 	// ttsrc is in non-deterministic order

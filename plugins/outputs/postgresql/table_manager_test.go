@@ -16,8 +16,8 @@ func TestTableManager_EnsureStructure(t *testing.T) {
 	require.NoError(t, p.Connect())
 
 	cols := []utils.Column{
-		columnFromTag("foo", ""),
-		columnFromField("baz", 0),
+		p.columnFromTag("foo", ""),
+		p.columnFromField("baz", 0),
 	}
 	missingCols, err := p.tableManager.EnsureStructure(
 		ctx,
@@ -41,8 +41,8 @@ func TestTableManager_refreshTableStructure(t *testing.T) {
 	require.NoError(t, p.Connect())
 
 	cols := []utils.Column{
-		columnFromTag("foo", ""),
-		columnFromField("baz", 0),
+		p.columnFromTag("foo", ""),
+		p.columnFromField("baz", 0),
 	}
 	_, err := p.tableManager.EnsureStructure(
 		ctx,
@@ -73,11 +73,34 @@ func TestTableManager_MatchSource(t *testing.T) {
 	metrics := []telegraf.Metric{
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 1}),
 	}
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 
 	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
 	assert.Contains(t, p.tableManager.table(t.Name()+p.TagTableSuffix).Columns(), "tag")
 	assert.Contains(t, p.tableManager.table(t.Name()).Columns(), "a")
+}
+
+func TestTableManager_MatchSource_UnsignedIntegers(t *testing.T) {
+	p := newPostgresqlTest(t)
+	p.UseUint8 = true
+	_ = p.Init()
+	require.NoError(t, p.Connect())
+
+	row := p.db.QueryRow(ctx, "SELECT count(*) FROM pg_extension WHERE extname='uint'")
+	var n int
+	require.NoError(t, row.Scan(&n))
+	if n == 0 {
+		t.Skipf("pguint extension is not installed")
+		t.SkipNow()
+	}
+
+	metrics := []telegraf.Metric{
+		newMetric(t, "", nil, MSI{"a": uint64(1)}),
+	}
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
+
+	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
+	assert.Equal(t, PgUint8, p.tableManager.table(t.Name()).Columns()["a"].Type)
 }
 
 func TestTableManager_noCreateTable(t *testing.T) {
@@ -88,7 +111,7 @@ func TestTableManager_noCreateTable(t *testing.T) {
 	metrics := []telegraf.Metric{
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 1}),
 	}
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 
 	require.Error(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
 }
@@ -102,7 +125,7 @@ func TestTableManager_noCreateTagTable(t *testing.T) {
 	metrics := []telegraf.Metric{
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 1}),
 	}
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 
 	require.Error(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
 }
@@ -116,7 +139,7 @@ func TestTableManager_cache(t *testing.T) {
 	metrics := []telegraf.Metric{
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 1}),
 	}
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 
 	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
 }
@@ -130,14 +153,14 @@ func TestTableManager_noAlterMissingTag(t *testing.T) {
 	metrics := []telegraf.Metric{
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 1}),
 	}
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
 
 	metrics = []telegraf.Metric{
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 2}),
 		newMetric(t, "", MSS{"tag": "foo", "bar": "baz"}, MSI{"a": 3}),
 	}
-	tsrc = NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc = NewTableSources(p.Postgresql, metrics)[t.Name()]
 	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
 	assert.NotContains(t, tsrc.ColumnNames(), "bar")
 }
@@ -153,14 +176,14 @@ func TestTableManager_noAlterMissingTagTableTag(t *testing.T) {
 	metrics := []telegraf.Metric{
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 1}),
 	}
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
 
 	metrics = []telegraf.Metric{
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 2}),
 		newMetric(t, "", MSS{"tag": "foo", "bar": "baz"}, MSI{"a": 3}),
 	}
-	tsrc = NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc = NewTableSources(p.Postgresql, metrics)[t.Name()]
 	ttsrc := NewTagTableSource(tsrc)
 	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
 	assert.NotContains(t, ttsrc.ColumnNames(), "bar")
@@ -175,14 +198,14 @@ func TestTableManager_noAlterMissingField(t *testing.T) {
 	metrics := []telegraf.Metric{
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 1}),
 	}
-	tsrc := NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
 
 	metrics = []telegraf.Metric{
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 2}),
 		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 3, "b": 3}),
 	}
-	tsrc = NewTableSources(&p.Postgresql, metrics)[t.Name()]
+	tsrc = NewTableSources(p.Postgresql, metrics)[t.Name()]
 	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
 	assert.NotContains(t, tsrc.ColumnNames(), "b")
 }

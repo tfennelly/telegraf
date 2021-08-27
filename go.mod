@@ -88,7 +88,9 @@ require (
 	github.com/influxdata/toml v0.0.0-20190415235208-270119a8ce65
 	github.com/influxdata/wlog v0.0.0-20160411224016-7c63b0a71ef8
 	github.com/jackc/pgconn v1.8.1
+	github.com/jackc/pgio v1.0.0
 	github.com/jackc/pgproto3/v2 v2.0.7 // indirect
+	github.com/jackc/pgtype v1.7.0
 	github.com/jackc/pgx/v4 v4.11.0
 	github.com/james4k/rcon v0.0.0-20120923215419-8fbb8268b60a
 	github.com/jhump/protoreflect v1.8.3-0.20210616212123-6cc1efa697ca

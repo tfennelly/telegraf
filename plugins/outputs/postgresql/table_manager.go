@@ -13,7 +13,10 @@ import (
 
 const (
 	refreshTableStructureStatement = `
-		SELECT column_name, data_type, col_description(format('%I.%I', table_schema, table_name)::regclass::oid, ordinal_position)
+		SELECT
+			column_name,
+			CASE WHEN data_type='USER-DEFINED' THEN udt_name ELSE data_type END,
+			col_description(format('%I.%I', table_schema, table_name)::regclass::oid, ordinal_position)
 		FROM information_schema.columns
 		WHERE table_schema = $1 and table_name = $2
 	`
@@ -92,9 +95,9 @@ func (tm *TableManager) refreshTableStructure(ctx context.Context, db dbh, tbl *
 
 	cols := make(map[string]utils.Column)
 	for rows.Next() {
-		var colName, colTypeStr string
+		var colName, colType string
 		desc := new(string)
-		err := rows.Scan(&colName, &colTypeStr, &desc)
+		err := rows.Scan(&colName, &colType, &desc)
 		if err != nil {
 			return err
 		}
@@ -121,7 +124,7 @@ func (tm *TableManager) refreshTableStructure(ctx context.Context, db dbh, tbl *
 
 		cols[colName] = utils.Column{
 			Name: colName,
-			Type: utils.PgDataType(colTypeStr),
+			Type: colType,
 			Role: role,
 		}
 	}

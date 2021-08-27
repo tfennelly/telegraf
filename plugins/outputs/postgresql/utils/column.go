@@ -19,14 +19,11 @@ const (
 	FieldColType
 )
 
-// PgDataType defines a string that represents a PostgreSQL data type.
-type PgDataType string
-
 type Column struct {
 	Name string
 	// the data type of each column should have in the db. used when checking
 	// if the schema matches or it needs updates
-	Type PgDataType
+	Type string
 	// the role each column has, helps properly map the metric to the db
 	Role ColumnRole
 }

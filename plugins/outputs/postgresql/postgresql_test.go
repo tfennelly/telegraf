@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"strings"
@@ -220,7 +221,7 @@ func prepareDatabase(name string) error {
 }
 
 type PostgresqlTest struct {
-	Postgresql
+	*Postgresql
 	Logger *LogAccumulator
 }
 
@@ -236,8 +237,20 @@ func newPostgresqlTest(tb testing.TB) *PostgresqlTest {
 	p.Logger = logger
 	p.LogLevel = "debug"
 	require.NoError(tb, p.Init())
-	pt := &PostgresqlTest{Postgresql: *p}
+	pt := &PostgresqlTest{Postgresql: p}
 	pt.Logger = logger
+
+	//p.dbConfig.AfterRelease = func(conn *pgx.Conn) bool {
+	//	loglen := len(logger.logs)
+	//	resp := conn.QueryRow(ctx, "select statement_timestamp() != transaction_timestamp(), statement_timestamp(), transaction_timestamp()")
+	//	logger.logs = logger.logs[:loglen] // drop any logs we just created
+	//	var inTx bool
+	//	var ts1, ts2 time.Time
+	//	if assert.NoError(tb, resp.Scan(&inTx, &ts1, &ts2)) {
+	//		return assert.False(tb, inTx, "connection was left in a transaction %s != %s", ts1, ts2)
+	//	}
+	//	return true
+	//}
 
 	return pt
 }
@@ -646,4 +659,30 @@ func TestWrite_tagError_foreignConstraint(t *testing.T) {
 	dump := dbTableDump(t, p.db, "")
 	require.Len(t, dump, 1)
 	assert.EqualValues(t, 1, dump[0]["v"])
+}
+
+func TestWrite_UnsignedIntegers(t *testing.T) {
+	p := newPostgresqlTest(t)
+	p.UseUint8 = true
+	_ = p.Init()
+	require.NoError(t, p.Connect())
+
+	row := p.db.QueryRow(ctx, "SELECT count(*) FROM pg_extension WHERE extname='uint'")
+	var n int
+	require.NoError(t, row.Scan(&n))
+	if n == 0 {
+		t.Skipf("pguint extension is not installed")
+		t.SkipNow()
+	}
+
+	metrics := []telegraf.Metric{
+		newMetric(t, "", MSS{}, MSI{"v": uint64(math.MaxUint64)}),
+	}
+	require.NoError(t, p.Write(metrics))
+
+	dump := dbTableDump(t, p.db, "")
+
+	if assert.Len(t, dump, 1) {
+		assert.EqualValues(t, uint64(math.MaxUint64), dump[0]["v"])
+	}
 }

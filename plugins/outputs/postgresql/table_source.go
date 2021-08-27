@@ -101,13 +101,13 @@ func (tsrc *TableSource) AddMetric(metric telegraf.Metric) {
 
 	if !tsrc.postgresql.TagsAsJsonb {
 		for _, t := range metric.TagList() {
-			tsrc.tagColumns.Add(columnFromTag(t.Key, t.Value))
+			tsrc.tagColumns.Add(tsrc.postgresql.columnFromTag(t.Key, t.Value))
 		}
 	}
 
 	if !tsrc.postgresql.FieldsAsJsonb {
 		for _, f := range metric.FieldList() {
-			tsrc.fieldColumns.Add(columnFromField(f.Key, f.Value))
+			tsrc.fieldColumns.Add(tsrc.postgresql.columnFromField(f.Key, f.Value))
 		}
 	}
 
