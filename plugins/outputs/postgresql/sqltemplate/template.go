@@ -27,7 +27,7 @@ The following variables are available within all template executions:
 
  * tagTable - A Table object referring to the table containing the
    tags. In the case of TagsAsForeignKeys and `table` is the metrics table,
-   then `tagTable` is the table containing the tags for this one.
+   then `tagTable` is the table containing the tags for it.
 
 Each object has helper methods that may be used within the template. See the documentation for the appropriate type.
 
@@ -146,14 +146,14 @@ func asString(obj interface{}) string {
 //
 // QuoteIdentifier is accessible within templates as 'quoteIdentifier'.
 func QuoteIdentifier(name interface{}) string {
-	return `"` + strings.ReplaceAll(asString(name), `"`, `""`) + `"`
+	return utils.QuoteIdentifier(asString(name))
 }
 
 // QuoteLiteral quotes the given string as a Postgres literal (single-quotes the value).
 //
 // QuoteLiteral is accessible within templates as 'quoteLiteral'.
 func QuoteLiteral(str interface{}) string {
-	return "'" + strings.ReplaceAll(asString(str), "'", "''") + "'"
+	return utils.QuoteLiteral(asString(str))
 }
 
 // Table is an object which represents a Postgres table.
@@ -225,7 +225,7 @@ func (tc Column) String() string {
 // Definition returns the column's definition (as used in a CREATE TABLE statement). E.G:
 //  "my_column" bigint
 func (tc Column) Definition() string {
-	return tc.Identifier() + " " + string(tc.Type)
+	return tc.Identifier() + " " + tc.Type
 }
 
 // Identifier returns the column's quoted identifier.

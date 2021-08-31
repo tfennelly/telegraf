@@ -3,7 +3,6 @@ package utils
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"hash/fnv"
 	"strings"
 	"sync/atomic"
@@ -11,10 +10,6 @@ import (
 	"github.com/jackc/pgx/v4"
 
 	"github.com/influxdata/telegraf"
-)
-
-const (
-	insertIntoSQLTemplate = "INSERT INTO %s(%s) VALUES(%s)"
 )
 
 func TagListToJSON(tagList []*telegraf.Tag) []byte {
@@ -34,8 +29,8 @@ func FieldListToJSON(fieldList []*telegraf.Field) ([]byte, error) {
 	return json.Marshal(fields)
 }
 
-// QuoteIdent returns a sanitized string safe to use in SQL as an identifier
-func QuoteIdent(name string) string {
+// QuoteIdentifier returns a sanitized string safe to use in SQL as an identifier
+func QuoteIdentifier(name string) string {
 	return pgx.Identifier{name}.Sanitize()
 }
 
@@ -44,7 +39,7 @@ func QuoteLiteral(name string) string {
 	return "'" + strings.Replace(name, "'", "''", -1) + "'"
 }
 
-// FullTableName returns a sanitized table name with it's schema (if supplied)
+// FullTableName returns a sanitized table name with its schema (if supplied)
 func FullTableName(schema, name string) pgx.Identifier {
 	if schema != "" {
 		return pgx.Identifier{schema, name}
@@ -71,21 +66,6 @@ func (l PGXLogger) Log(_ context.Context, level pgx.LogLevel, msg string, data m
 	default:
 		l.Debugf("PG %s - %+v", msg, data)
 	}
-}
-
-// GenerateInsert returns a SQL statement to insert values in a table
-// with $X placeholders for the values
-func GenerateInsert(fullSanitizedTableName string, columns []string) string {
-	valuePlaceholders := make([]string, len(columns))
-	quotedColumns := make([]string, len(columns))
-	for i, column := range columns {
-		valuePlaceholders[i] = fmt.Sprintf("$%d", i+1)
-		quotedColumns[i] = QuoteIdent(column)
-	}
-
-	columnNames := strings.Join(quotedColumns, ",")
-	values := strings.Join(valuePlaceholders, ",")
-	return fmt.Sprintf(insertIntoSQLTemplate, fullSanitizedTableName, columnNames, values)
 }
 
 func GetTagID(metric telegraf.Metric) int64 {

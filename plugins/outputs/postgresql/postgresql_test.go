@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"regexp"
 	"strings"
@@ -38,9 +39,10 @@ func (l Log) String() string {
 
 // LogAccumulator is a log collector that satisfies telegraf.Logger.
 type LogAccumulator struct {
-	logs []Log
-	cond *sync.Cond
-	tb   testing.TB
+	logs      []Log
+	cond      *sync.Cond
+	tb        testing.TB
+	emitLevel pgx.LogLevel
 }
 
 func NewLogAccumulator(tb testing.TB) *LogAccumulator {
@@ -51,14 +53,29 @@ func NewLogAccumulator(tb testing.TB) *LogAccumulator {
 }
 
 func (la *LogAccumulator) append(level pgx.LogLevel, format string, args []interface{}) {
+	la.tb.Helper()
+
 	la.cond.L.Lock()
 	log := Log{level, format, args}
 	la.logs = append(la.logs, log)
-	s := log.String()
-	la.tb.Helper()
-	la.tb.Log(s)
+
+	if la.emitLevel == 0 || log.level <= la.emitLevel {
+		la.tb.Log(log.String())
+	}
+
 	la.cond.Broadcast()
 	la.cond.L.Unlock()
+}
+
+func (la *LogAccumulator) HasLevel(level pgx.LogLevel) bool {
+	la.cond.L.Lock()
+	defer la.cond.L.Unlock()
+	for _, log := range la.logs {
+		if log.level > 0 && log.level <= level {
+			return true
+		}
+	}
+	return false
 }
 
 func (la *LogAccumulator) WaitLen(n int) []Log {
@@ -185,7 +202,7 @@ var ctx = context.Background()
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if testing.Short() {
-		return
+		os.Exit(m.Run())
 	}
 
 	// Use the integration server if no other PG addr env vars specified.
@@ -240,17 +257,13 @@ func newPostgresqlTest(tb testing.TB) *PostgresqlTest {
 	pt := &PostgresqlTest{Postgresql: p}
 	pt.Logger = logger
 
-	//p.dbConfig.AfterRelease = func(conn *pgx.Conn) bool {
-	//	loglen := len(logger.logs)
-	//	resp := conn.QueryRow(ctx, "select statement_timestamp() != transaction_timestamp(), statement_timestamp(), transaction_timestamp()")
-	//	logger.logs = logger.logs[:loglen] // drop any logs we just created
-	//	var inTx bool
-	//	var ts1, ts2 time.Time
-	//	if assert.NoError(tb, resp.Scan(&inTx, &ts1, &ts2)) {
-	//		return assert.False(tb, inTx, "connection was left in a transaction %s != %s", ts1, ts2)
-	//	}
-	//	return true
-	//}
+	tb.Cleanup(func() {
+		if pt.db != nil {
+			// This will block forever (timeout the test) if not all connections were released (committed/rollbacked).
+			// We can't use pt.db.Stats() because in some cases, pgx releases the connection asynchronously.
+			pt.db.Close()
+		}
+	})
 
 	return pt
 }
@@ -279,14 +292,12 @@ func TestPostgresqlConnect(t *testing.T) {
 	p := newPostgresqlTest(t)
 	require.NoError(t, p.Connect())
 	assert.EqualValues(t, 1, p.db.Stat().MaxConns())
-	p.Close()
 
 	p = newPostgresqlTest(t)
 	p.Connection += " pool_max_conns=2"
 	_ = p.Init()
 	require.NoError(t, p.Connect())
 	assert.EqualValues(t, 2, p.db.Stat().MaxConns())
-	p.Close()
 }
 
 func newMetric(
@@ -364,7 +375,7 @@ func TestWrite_concurrent(t *testing.T) {
 		newMetric(t, "_a", MSS{}, MSI{"v": 1}),
 	}
 	require.NoError(t, p.Write(metrics))
-	p.Logger.WaitForCopy(t.Name()+"_a", true)
+	p.Logger.WaitForCopy(t.Name()+"_a", false)
 	// clear so that the WaitForCopy calls below don't pick up this one
 	p.Logger.Clear()
 
@@ -372,7 +383,7 @@ func TestWrite_concurrent(t *testing.T) {
 	tx, err := p.db.Begin(ctx)
 	require.NoError(t, err)
 	defer tx.Rollback(ctx) //nolint:errcheck
-	_, err = tx.Exec(ctx, "LOCK TABLE "+utils.QuoteIdent(t.Name()+"_a"))
+	_, err = tx.Exec(ctx, "LOCK TABLE "+utils.QuoteIdentifier(t.Name()+"_a"))
 	require.NoError(t, err)
 
 	metrics = []telegraf.Metric{
@@ -389,10 +400,10 @@ func TestWrite_concurrent(t *testing.T) {
 	}
 	require.NoError(t, p.Write(metrics))
 
-	p.Logger.WaitForCopy(t.Name()+"_b", true)
+	p.Logger.WaitForCopy(t.Name()+"_b", false)
 	// release the lock on table _a
 	_ = tx.Rollback(ctx)
-	p.Logger.WaitForCopy(t.Name()+"_a", true)
+	p.Logger.WaitForCopy(t.Name()+"_a", false)
 
 	dumpA := dbTableDump(t, p.db, "_a")
 	dumpB := dbTableDump(t, p.db, "_b")
@@ -451,7 +462,7 @@ func TestWrite_concurrentPermError(t *testing.T) {
 		newMetric(t, "_a", MSS{}, MSI{"v": 1}),
 	}
 	require.NoError(t, p.Write(metrics))
-	p.Logger.WaitForCopy(t.Name()+"_a", true)
+	p.Logger.WaitForCopy(t.Name()+"_a", false)
 
 	metrics = []telegraf.Metric{
 		newMetric(t, "_a", MSS{}, MSI{"v": "a"}),
@@ -461,7 +472,7 @@ func TestWrite_concurrentPermError(t *testing.T) {
 	p.Logger.WaitFor(func(l Log) bool {
 		return strings.Contains(l.String(), "write error")
 	}, false)
-	p.Logger.WaitForCopy(t.Name()+"_b", true)
+	p.Logger.WaitForCopy(t.Name()+"_b", false)
 
 	dumpA := dbTableDump(t, p.db, "_a")
 	dumpB := dbTableDump(t, p.db, "_b")
@@ -556,7 +567,7 @@ func TestWrite_concurrentTempError(t *testing.T) {
 	}
 	require.NoError(t, p.Write(metrics))
 
-	p.Logger.WaitForCopy(t.Name()+"_a", true)
+	p.Logger.WaitForCopy(t.Name()+"_a", false)
 	dumpA := dbTableDump(t, p.db, "_a")
 	assert.Len(t, dumpA, 1)
 
@@ -684,5 +695,64 @@ func TestWrite_UnsignedIntegers(t *testing.T) {
 
 	if assert.Len(t, dump, 1) {
 		assert.EqualValues(t, uint64(math.MaxUint64), dump[0]["v"])
+	}
+}
+
+// Last ditch effort to find any concurrency issues.
+func TestStressConcurrency(t *testing.T) {
+	metrics := []telegraf.Metric{
+		newMetric(t, "", MSS{"foo": "bar"}, MSI{"a": 1}),
+		newMetric(t, "", MSS{"pop": "tart"}, MSI{"b": 1}),
+		newMetric(t, "", MSS{"foo": "bar", "pop": "tart"}, MSI{"a": 2, "b": 2}),
+		newMetric(t, "_b", MSS{"foo": "bar"}, MSI{"a": 1}),
+	}
+
+	concurrency := 4
+	loops := 100
+
+	pctl := newPostgresqlTest(t)
+	pctl.Logger.emitLevel = pgx.LogLevelWarn
+	require.NoError(t, pctl.Connect())
+
+	for i := 0; i < loops; i++ {
+		var wgStart, wgDone sync.WaitGroup
+		wgStart.Add(concurrency)
+		wgDone.Add(concurrency)
+		for j := 0; j < concurrency; j++ {
+			go func() {
+				mShuf := make([]telegraf.Metric, len(metrics))
+				copy(mShuf, metrics)
+				rand.Shuffle(len(mShuf), func(a, b int) { mShuf[a], mShuf[b] = mShuf[b], mShuf[a] })
+
+				p := newPostgresqlTest(t)
+				p.TagsAsForeignKeys = true
+				p.Logger.emitLevel = pgx.LogLevelWarn
+				p.dbConfig.MaxConns = int32(rand.Intn(3) + 1)
+				require.NoError(t, p.Connect())
+				wgStart.Done()
+				wgStart.Wait()
+
+				err := p.Write(mShuf)
+				assert.NoError(t, err)
+				assert.NoError(t, p.Close())
+				assert.False(t, p.Logger.HasLevel(pgx.LogLevelWarn))
+				wgDone.Done()
+			}()
+		}
+		wgDone.Wait()
+
+		if t.Failed() {
+			break
+		}
+
+		for _, stmt := range []string{
+			"DROP TABLE \"" + t.Name() + "_tag\"",
+			"DROP TABLE \"" + t.Name() + "\"",
+			"DROP TABLE \"" + t.Name() + "_b_tag\"",
+			"DROP TABLE \"" + t.Name() + "_b\"",
+		} {
+			_, err := pctl.db.Exec(ctx, stmt)
+			require.NoError(t, err)
+		}
 	}
 }

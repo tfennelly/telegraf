@@ -30,13 +30,54 @@ func TestTableManager_EnsureStructure(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-	require.Empty(t, missingCols)
+	assert.Empty(t, missingCols)
 
-	assert.EqualValues(t, cols[0], p.tableManager.table(t.Name()).Columns()["foo"])
-	assert.EqualValues(t, cols[1], p.tableManager.table(t.Name()).Columns()["baz"])
+	tblCols := p.tableManager.table(t.Name()).columns
+	assert.EqualValues(t, cols[0], tblCols["foo"])
+	assert.EqualValues(t, cols[1], tblCols["baz"])
 }
 
-func TestTableManager_refreshTableStructure(t *testing.T) {
+func TestTableManager_EnsureStructure_alter(t *testing.T) {
+	p := newPostgresqlTest(t)
+	require.NoError(t, p.Connect())
+
+	cols := []utils.Column{
+		p.columnFromTag("foo", ""),
+		p.columnFromField("bar", 0),
+	}
+	_, err := p.tableManager.EnsureStructure(
+		ctx,
+		p.db,
+		p.tableManager.table(t.Name()),
+		cols,
+		p.CreateTemplates,
+		p.AddColumnTemplates,
+		p.tableManager.table(t.Name()),
+		nil,
+	)
+	require.NoError(t, err)
+
+	cols = append(cols, p.columnFromField("baz", 0))
+	missingCols, err := p.tableManager.EnsureStructure(
+		ctx,
+		p.db,
+		p.tableManager.table(t.Name()),
+		cols,
+		p.CreateTemplates,
+		p.AddColumnTemplates,
+		p.tableManager.table(t.Name()),
+		nil,
+	)
+	require.NoError(t, err)
+	assert.Empty(t, missingCols)
+
+	tblCols := p.tableManager.table(t.Name()).columns
+	assert.EqualValues(t, cols[0], tblCols["foo"])
+	assert.EqualValues(t, cols[1], tblCols["bar"])
+	assert.EqualValues(t, cols[2], tblCols["baz"])
+}
+
+func TestTableManager_getColumns(t *testing.T) {
 	p := newPostgresqlTest(t)
 	require.NoError(t, p.Connect())
 
@@ -57,12 +98,13 @@ func TestTableManager_refreshTableStructure(t *testing.T) {
 	require.NoError(t, err)
 
 	p.tableManager.ClearTableCache()
-	require.Empty(t, p.tableManager.table(t.Name()).Columns())
+	require.Empty(t, p.tableManager.table(t.Name()).columns)
 
-	require.NoError(t, p.tableManager.refreshTableStructure(ctx, p.db, p.tableManager.table(t.Name())))
+	curCols, err := p.tableManager.getColumns(ctx, p.db, t.Name())
+	require.NoError(t, err)
 
-	assert.EqualValues(t, cols[0], p.tableManager.table(t.Name()).Columns()["foo"])
-	assert.EqualValues(t, cols[1], p.tableManager.table(t.Name()).Columns()["baz"])
+	assert.EqualValues(t, cols[0], curCols["foo"])
+	assert.EqualValues(t, cols[1], curCols["baz"])
 }
 
 func TestTableManager_MatchSource(t *testing.T) {
@@ -76,8 +118,8 @@ func TestTableManager_MatchSource(t *testing.T) {
 	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 
 	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
-	assert.Contains(t, p.tableManager.table(t.Name()+p.TagTableSuffix).Columns(), "tag")
-	assert.Contains(t, p.tableManager.table(t.Name()).Columns(), "a")
+	assert.Contains(t, p.tableManager.table(t.Name()+p.TagTableSuffix).columns, "tag")
+	assert.Contains(t, p.tableManager.table(t.Name()).columns, "a")
 }
 
 func TestTableManager_MatchSource_UnsignedIntegers(t *testing.T) {
@@ -100,7 +142,7 @@ func TestTableManager_MatchSource_UnsignedIntegers(t *testing.T) {
 	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
 
 	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
-	assert.Equal(t, PgUint8, p.tableManager.table(t.Name()).Columns()["a"].Type)
+	assert.Equal(t, PgUint8, p.tableManager.table(t.Name()).columns["a"].Type)
 }
 
 func TestTableManager_noCreateTable(t *testing.T) {

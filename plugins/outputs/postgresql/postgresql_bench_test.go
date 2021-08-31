@@ -26,6 +26,7 @@ func benchmarkPostgresql(b *testing.B, gen <-chan []telegraf.Metric, concurrency
 	p.Connection += fmt.Sprintf(" pool_max_conns=%d", concurrency)
 	p.TagsAsForeignKeys = foreignTags
 	p.LogLevel = ""
+	_ = p.Init()
 	if err := p.Connect(); err != nil {
 		b.Fatalf("Error: %s", err)
 	}

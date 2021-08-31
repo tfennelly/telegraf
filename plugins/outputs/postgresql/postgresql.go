@@ -277,6 +277,7 @@ func (p *Postgresql) Close() error {
 		select {
 		case <-p.writeWaitGroup.C():
 		case <-time.NewTimer(time.Second * 5).C:
+			p.Logger.Warnf("Shutdown timeout expired while waiting for metrics to flush. Some metrics may not be written to database.")
 		}
 	}
 
@@ -290,10 +291,23 @@ func (p *Postgresql) Close() error {
 func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 	tableSources := NewTableSources(p, metrics)
 
+	var err error
 	if p.db.Stat().MaxConns() > 1 {
-		return p.writeConcurrent(tableSources)
+		err = p.writeConcurrent(tableSources)
+	} else {
+		err = p.writeSequential(tableSources)
 	}
-	return p.writeSequential(tableSources)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			// PgError doesn't include .Detail in Error(), so we concat it onto .Message.
+			if pgErr.Detail != "" {
+				pgErr.Message += "; " + pgErr.Detail
+			}
+		}
+	}
+
+	return err
 }
 
 func (p *Postgresql) writeSequential(tableSources map[string]*TableSource) error {
@@ -326,7 +340,6 @@ func (p *Postgresql) writeSequential(tableSources map[string]*TableSource) error
 				}
 			}
 		}
-
 		// savepoints do not need to be committed (released), so save the round trip and skip it
 	}
 
@@ -388,6 +401,11 @@ func isTempError(err error) bool {
 		case "25": // Invalid Transaction State
 			// If we're here, this is a bug, but recoverable
 			return true
+		case "40": // Transaction Rollback
+			switch pgErr.Code { //nolint:revive
+			case "40P01": // deadlock_detected
+				return true
+			}
 		case "42": // Syntax Error or Access Rule Violation
 			switch pgErr.Code {
 			case "42701": // duplicate_column
@@ -426,19 +444,11 @@ func isTempError(err error) bool {
 func (p *Postgresql) writeRetry(ctx context.Context, tableSource *TableSource) error {
 	backoff := time.Duration(0)
 	for {
-		tx, err := p.db.Begin(ctx)
-		if err != nil {
-			return err
-		}
-
-		err = p.writeMetricsFromMeasure(ctx, tx, tableSource)
+		err := p.writeMetricsFromMeasure(ctx, p.db, tableSource)
 		if err == nil {
-			if err := tx.Commit(ctx); err == nil {
-				return nil
-			}
+			return nil
 		}
 
-		_ = tx.Rollback(ctx)
 		if !isTempError(err) {
 			return err
 		}
