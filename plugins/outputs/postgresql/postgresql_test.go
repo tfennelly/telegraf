@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -755,4 +756,14 @@ func TestStressConcurrency(t *testing.T) {
 			require.NoError(t, err)
 		}
 	}
+}
+
+func TestReadme(t *testing.T) {
+	f, err := os.Open("README.md")
+	require.NoError(t, err)
+	buf := bytes.NewBuffer(nil)
+	_, _ = buf.ReadFrom(f)
+	_ = f.Close()
+	txt := strings.ReplaceAll(buf.String(), "\r", "") // windows files contain CR
+	assert.Contains(t, txt, (&Postgresql{}).SampleConfig(), "Readme is out of date with sample config")
 }
