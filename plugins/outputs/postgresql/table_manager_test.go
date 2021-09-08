@@ -1,10 +1,10 @@
 package postgresql
 
 import (
-	"testing"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"strings"
+	"testing"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/sqltemplate"
@@ -250,4 +250,42 @@ func TestTableManager_noAlterMissingField(t *testing.T) {
 	tsrc = NewTableSources(p.Postgresql, metrics)[t.Name()]
 	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
 	assert.NotContains(t, tsrc.ColumnNames(), "b")
+}
+
+func TestTableManager_addColumnTemplates(t *testing.T) {
+	p := newPostgresqlTest(t)
+	p.TagsAsForeignKeys = true
+	require.NoError(t, p.Connect())
+
+	metrics := []telegraf.Metric{
+		newMetric(t, "", MSS{"foo": "bar"}, MSI{"a": 1}),
+	}
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
+	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
+
+	p = newPostgresqlTest(t)
+	p.TagsAsForeignKeys = true
+	tmpl := &sqltemplate.Template{}
+	require.NoError(t, tmpl.UnmarshalText([]byte(`-- addColumnTemplate: {{ . }}`)))
+	p.AddColumnTemplates = append(p.AddColumnTemplates, tmpl)
+	require.NoError(t, p.Connect())
+
+	metrics = []telegraf.Metric{
+		newMetric(t, "", MSS{"pop": "tart"}, MSI{"a": 1, "b": 2}),
+	}
+	tsrc = NewTableSources(p.Postgresql, metrics)[t.Name()]
+	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
+	p.Logger.Info("ok")
+	var log string
+	for _, l := range p.Logger.Logs() {
+		if strings.Contains(l.String(), "-- addColumnTemplate") {
+			log = l.String()
+			break
+		}
+	}
+	assert.Contains(t, log, `table:"public"."TestTableManager_addColumnTemplates"`)
+	assert.Contains(t, log, `columns:"b" bigint`)
+	assert.Contains(t, log, `allColumns:"time" timestamp with time zone, "tag_id" bigint, "a" bigint, "b" bigint`)
+	assert.Contains(t, log, `metricTable:"public"."TestTableManager_addColumnTemplates"`)
+	assert.Contains(t, log, `tagTable:"public"."TestTableManager_addColumnTemplates_tag"`)
 }

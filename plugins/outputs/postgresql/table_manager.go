@@ -200,6 +200,7 @@ func (tm *TableManager) EnsureStructure(
 	if currCols, err = tm.getColumns(ctx, db, tbl.name); err != nil {
 		return nil, err
 	}
+	tbl.columns = currCols
 	missingCols = diffMissingColumns(currCols, columns)
 	if len(missingCols) == 0 {
 		tbl.columns = currCols
@@ -231,6 +232,7 @@ func (tm *TableManager) EnsureStructure(
 	if currCols, err = tm.getColumns(ctx, tx, tbl.name); err != nil {
 		return nil, err
 	}
+	tbl.columns = currCols
 	if currCols != nil {
 		missingCols = diffMissingColumns(currCols, columns)
 		if len(missingCols) == 0 {
