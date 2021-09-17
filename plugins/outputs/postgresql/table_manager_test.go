@@ -1,10 +1,11 @@
 package postgresql
 
 import (
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/sqltemplate"
@@ -285,7 +286,7 @@ func TestTableManager_addColumnTemplates(t *testing.T) {
 	}
 	assert.Contains(t, log, `table:"public"."TestTableManager_addColumnTemplates"`)
 	assert.Contains(t, log, `columns:"b" bigint`)
-	assert.Contains(t, log, `allColumns:"time" timestamp with time zone, "tag_id" bigint, "a" bigint, "b" bigint`)
+	assert.Contains(t, log, `allColumns:"time" timestamp without time zone, "tag_id" bigint, "a" bigint, "b" bigint`)
 	assert.Contains(t, log, `metricTable:"public"."TestTableManager_addColumnTemplates"`)
 	assert.Contains(t, log, `tagTable:"public"."TestTableManager_addColumnTemplates_tag"`)
 }

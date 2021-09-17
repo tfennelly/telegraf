@@ -53,7 +53,7 @@ func (p *Postgresql) derivePgDatatype(value interface{}) string {
 	case string:
 		return PgText
 	case time.Time:
-		return PgTimestampWithTimeZone
+		return PgTimestampWithoutTimeZone
 	default:
 		return PgText
 	}

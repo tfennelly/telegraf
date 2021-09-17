@@ -5,7 +5,7 @@ import "github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 // Column names and data types for standard fields (time, tag_id, tags, and fields)
 const (
 	timeColumnName       = "time"
-	timeColumnDataType   = PgTimestampWithTimeZone
+	timeColumnDataType   = PgTimestampWithoutTimeZone
 	tagIDColumnName      = "tag_id"
 	tagIDColumnDataType  = PgBigInt
 	tagsJSONColumnName   = "tags"

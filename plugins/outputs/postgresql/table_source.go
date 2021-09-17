@@ -254,7 +254,7 @@ func (tsrc *TableSource) getValues() ([]interface{}, error) {
 	metric := tsrc.metrics[tsrc.cursor]
 
 	values := []interface{}{
-		metric.Time(),
+		metric.Time().UTC(),
 	}
 
 	if !tsrc.postgresql.TagsAsForeignKeys {
