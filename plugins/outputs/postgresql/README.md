@@ -77,6 +77,11 @@ The plugin manages the schema, automatically updating missing columns.
   ## controls the maximum backoff duration.
   # retry_max_backoff = "15s"
 
+  ## Approximate number of tag IDs to store in in-memory cache (when using tags_as_foreign_keys).
+  ## This is an optimization to skip inserting known tag IDs.
+  ## Each entry consumes approximately 34 bytes of memory.
+  # tag_cache_size = 100000
+
   ## Enable & set the log level for the Postgres driver.
   # log_level = "warn" # trace, debug, info, warn, error, none
 ```

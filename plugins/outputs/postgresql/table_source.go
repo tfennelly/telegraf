@@ -2,6 +2,7 @@ package postgresql
 
 import (
 	"fmt"
+	"hash/fnv"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
@@ -49,6 +50,9 @@ type TableSource struct {
 	cursor       int
 	cursorValues []interface{}
 	cursorError  error
+	// tagHashSalt is so that we can use a global tag cache for all tables. The salt is unique per table, and combined
+	// with the tag ID when looked up in the cache.
+	tagHashSalt int64
 
 	tagColumns *columnList
 	// tagSets is the list of tag IDs to tag values in use within the TableSource. The position of each value in the list
@@ -67,7 +71,7 @@ func NewTableSources(p *Postgresql, metrics []telegraf.Metric) map[string]*Table
 	for _, m := range metrics {
 		tsrc := tableSources[m.Name()]
 		if tsrc == nil {
-			tsrc = NewTableSource(p)
+			tsrc = NewTableSource(p, m.Name())
 			tableSources[m.Name()] = tsrc
 		}
 		tsrc.AddMetric(m)
@@ -76,11 +80,15 @@ func NewTableSources(p *Postgresql, metrics []telegraf.Metric) map[string]*Table
 	return tableSources
 }
 
-func NewTableSource(postgresql *Postgresql) *TableSource {
+func NewTableSource(postgresql *Postgresql, name string) *TableSource {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(name))
+
 	tsrc := &TableSource{
-		postgresql: postgresql,
-		cursor:     -1,
-		tagSets:    make(map[int64][]*telegraf.Tag),
+		postgresql:  postgresql,
+		cursor:      -1,
+		tagSets:     make(map[int64][]*telegraf.Tag),
+		tagHashSalt: int64(h.Sum64()),
 	}
 	if !postgresql.TagsAsJsonb {
 		tsrc.tagColumns = newColumnList()
@@ -349,6 +357,18 @@ func (ttsrc *TagTableSource) Name() string {
 	return ttsrc.TableSource.Name() + ttsrc.postgresql.TagTableSuffix
 }
 
+func (ttsrc *TagTableSource) cacheCheck(tagID int64) bool {
+	// Adding the 2 hashes is good enough. It's not a perfect solution, but given that we're operating in an int64
+	// space, the risk of collision is extremely small.
+	key := ttsrc.tagHashSalt + tagID
+	_, err := ttsrc.postgresql.tagsCache.GetInt(key)
+	return err == nil
+}
+func (ttsrc *TagTableSource) cacheTouch(tagID int64) {
+	key := ttsrc.tagHashSalt + tagID
+	_ = ttsrc.postgresql.tagsCache.SetInt(key, nil, 0)
+}
+
 func (ttsrc *TagTableSource) ColumnNames() []string {
 	cols := ttsrc.TagTableColumns()
 	names := make([]string, len(cols))
@@ -366,7 +386,7 @@ func (ttsrc *TagTableSource) Next() bool {
 		}
 		ttsrc.cursor++
 
-		if _, err := ttsrc.postgresql.tagsCache.GetInt(ttsrc.tagIDs[ttsrc.cursor]); err == nil {
+		if ttsrc.cacheCheck(ttsrc.tagIDs[ttsrc.cursor]) {
 			// tag ID already inserted
 			continue
 		}
@@ -407,7 +427,7 @@ func (ttsrc *TagTableSource) Values() ([]interface{}, error) {
 
 func (ttsrc *TagTableSource) UpdateCache() {
 	for _, tagID := range ttsrc.tagIDs {
-		_ = ttsrc.postgresql.tagsCache.SetInt(tagID, nil, 0)
+		ttsrc.cacheTouch(tagID)
 	}
 }
 

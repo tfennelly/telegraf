@@ -99,6 +99,11 @@ var sampleConfig = `
   ## controls the maximum backoff duration.
   # retry_max_backoff = "15s"
 
+  ## Approximate number of tag IDs to store in in-memory cache (when using tags_as_foreign_keys).
+  ## This is an optimization to skip inserting known tag IDs.
+  ## Each entry consumes approximately 34 bytes of memory.
+  # tag_cache_size = 100000
+
   ## Enable & set the log level for the Postgres driver.
   # log_level = "warn" # trace, debug, info, warn, error, none
 `
@@ -117,6 +122,7 @@ type Postgresql struct {
 	TagTableAddColumnTemplates []*sqltemplate.Template `toml:"tag_table_add_column_templates"`
 	UseUint8                   bool                    `toml:"use_uint8"`
 	RetryMaxBackoff            config.Duration         `toml:"retry_max_backoff"`
+	TagCacheSize               int                     `toml:"tag_cache_size"`
 	LogLevel                   string                  `toml:"log_level"`
 
 	dbContext       context.Context
@@ -179,6 +185,12 @@ func (p *Postgresql) Init() error {
 		p.RetryMaxBackoff = config.Duration(time.Second * 15)
 	}
 
+	if p.TagCacheSize == 0 {
+		p.TagCacheSize = 100000
+	} else if p.TagCacheSize < 0 {
+		return fmt.Errorf("invalid tag_cache_size")
+	}
+
 	if p.LogLevel == "" {
 		p.LogLevel = "warn"
 	}
@@ -237,7 +249,7 @@ func (p *Postgresql) Connect() error {
 	p.tableManager = NewTableManager(p)
 
 	if p.TagsAsForeignKeys {
-		p.tagsCache = freecache.NewCache(5 * 1024 * 1024) // 5MB
+		p.tagsCache = freecache.NewCache(p.TagCacheSize * 34) // from testing, each entry consumes approx 34 bytes
 	}
 
 	maxConns := int(p.db.Stat().MaxConns())
@@ -293,6 +305,17 @@ func (p *Postgresql) Close() error {
 }
 
 func (p *Postgresql) Write(metrics []telegraf.Metric) error {
+	if p.tagsCache != nil {
+		// gather at the start of write so there's less chance of any async operations ongoing
+		p.Logger.Debugf("cache: size=%d hit=%d miss=%d full=%d\n",
+			p.tagsCache.EntryCount(),
+			p.tagsCache.HitCount(),
+			p.tagsCache.MissCount(),
+			p.tagsCache.EvacuateCount(),
+		)
+		p.tagsCache.ResetStatistics()
+	}
+
 	tableSources := NewTableSources(p, metrics)
 
 	var err error
