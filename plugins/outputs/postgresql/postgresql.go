@@ -202,6 +202,10 @@ func (p *Postgresql) Init() error {
 		p.dbConfig.MaxConns = 1
 	}
 
+	if _, ok := p.dbConfig.ConnConfig.RuntimeParams["application_name"]; !ok {
+		p.dbConfig.ConnConfig.RuntimeParams["application_name"] = "telegraf"
+	}
+
 	if p.LogLevel != "" {
 		p.dbConfig.ConnConfig.Logger = utils.PGXLogger{Logger: p.Logger}
 		p.dbConfig.ConnConfig.LogLevel, err = pgx.LogLevelFromString(p.LogLevel)
