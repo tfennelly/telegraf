@@ -29,15 +29,16 @@ type dbh interface {
 }
 
 var sampleConfig = `
-  ## specify address via a url matching:
-  ##   postgres://[pqgotest[:password]]@localhost[/dbname]\
+	## Specify connection address via the standard libpq connection string:
+  ##   host=... user=... password=... sslmode=... dbname=...
+	## Or a URL:
+  ##   postgres://[user[:password]]@localhost[/dbname]\
   ##       ?sslmode=[disable|verify-ca|verify-full]
-  ## or a simple string:
-  ##   host=localhost user=pqotest password=... sslmode=... dbname=app_production
   ##
-  ## All connection parameters are optional. Also supported are PG environment vars
+  ## All connection parameters are optional. Environment vars are also supported.
   ## e.g. PGPASSWORD, PGHOST, PGUSER, PGDATABASE 
-  ## all supported vars here: https://www.postgresql.org/docs/current/libpq-envars.html
+  ## All supported vars can be found here:
+	##  https://www.postgresql.org/docs/current/libpq-envars.html
   ##
   ## Non-standard parameters:
   ##   pool_max_conns (default: 1) - Maximum size of connection pool for parallel (per-batch per-table) inserts.
@@ -45,11 +46,7 @@ var sampleConfig = `
   ##   pool_max_conn_lifetime (default: 0s) - Maximum age of a connection before closing.
   ##   pool_max_conn_idle_time (default: 0s) - Maximum idle time of a connection before closing.
   ##   pool_health_check_period (default: 0s) - Duration between health checks on idle connections.
-  ##
-  ## Without the dbname parameter, the driver will default to a database
-  ## with the same name as the user. This dbname is just for instantiating a
-  ## connection with the server and doesn't restrict the databases we are trying
-  ## to grab metrics for.
+	# connection = ""
 
   ## Postgres schema to use.
   # schema = "public"
