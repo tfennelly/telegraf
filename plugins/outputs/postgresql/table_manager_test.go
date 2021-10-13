@@ -208,8 +208,8 @@ func TestTableManager_noAlterMissingTag(t *testing.T) {
 	assert.NotContains(t, tsrc.ColumnNames(), "bar")
 }
 
-// Verify that when alter statements are disabled with foreign tags and a metric comes in with a new tag key, that the
-// field is omitted.
+// Verify that when using foreign tags and alter statements are disabled and a metric comes in with a new tag key, that
+// the tag is omitted.
 func TestTableManager_noAlterMissingTagTableTag(t *testing.T) {
 	p := newPostgresqlTest(t)
 	p.TagsAsForeignKeys = true
@@ -232,10 +232,59 @@ func TestTableManager_noAlterMissingTagTableTag(t *testing.T) {
 	assert.NotContains(t, ttsrc.ColumnNames(), "bar")
 }
 
+// Verify that when using foreign tags and alter statements generate a permanent error and a metric comes in with a new
+// tag key, that the tag is omitted.
+func TestTableManager_badAlterTagTable(t *testing.T) {
+	p := newPostgresqlTest(t)
+	p.TagsAsForeignKeys = true
+	tmpl := &sqltemplate.Template{}
+	_ = tmpl.UnmarshalText([]byte("bad"))
+	p.TagTableAddColumnTemplates = []*sqltemplate.Template{tmpl}
+	require.NoError(t, p.Connect())
+
+	metrics := []telegraf.Metric{
+		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 1}),
+	}
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
+	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
+
+	metrics = []telegraf.Metric{
+		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 2}),
+		newMetric(t, "", MSS{"tag": "foo", "bar": "baz"}, MSI{"a": 3}),
+	}
+	tsrc = NewTableSources(p.Postgresql, metrics)[t.Name()]
+	ttsrc := NewTagTableSource(tsrc)
+	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
+	assert.NotContains(t, ttsrc.ColumnNames(), "bar")
+}
+
 // verify that when alter statements are disabled and a metric comes in with a new field key, that the field is omitted.
 func TestTableManager_noAlterMissingField(t *testing.T) {
 	p := newPostgresqlTest(t)
 	p.AddColumnTemplates = []*sqltemplate.Template{}
+	require.NoError(t, p.Connect())
+
+	metrics := []telegraf.Metric{
+		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 1}),
+	}
+	tsrc := NewTableSources(p.Postgresql, metrics)[t.Name()]
+	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
+
+	metrics = []telegraf.Metric{
+		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 2}),
+		newMetric(t, "", MSS{"tag": "foo"}, MSI{"a": 3, "b": 3}),
+	}
+	tsrc = NewTableSources(p.Postgresql, metrics)[t.Name()]
+	require.NoError(t, p.tableManager.MatchSource(ctx, p.db, tsrc))
+	assert.NotContains(t, tsrc.ColumnNames(), "b")
+}
+
+// verify that when alter statements generate a permanent error and a metric comes in with a new field key, that the field is omitted.
+func TestTableManager_badAlterField(t *testing.T) {
+	p := newPostgresqlTest(t)
+	tmpl := &sqltemplate.Template{}
+	_ = tmpl.UnmarshalText([]byte("bad"))
+	p.AddColumnTemplates = []*sqltemplate.Template{tmpl}
 	require.NoError(t, p.Connect())
 
 	metrics := []telegraf.Metric{

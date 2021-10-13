@@ -86,7 +86,10 @@ func (tm *TableManager) MatchSource(ctx context.Context, db dbh, rowSource *Tabl
 			tagTable,
 		)
 		if err != nil {
-			return err
+			if isTempError(err) {
+				return err
+			}
+			tm.Postgresql.Logger.Errorf("permanent error updating schema for %s: %w", tagTable.name, err)
 		}
 
 		if len(missingCols) > 0 {
@@ -114,7 +117,10 @@ func (tm *TableManager) MatchSource(ctx context.Context, db dbh, rowSource *Tabl
 		tagTable,
 	)
 	if err != nil {
-		return err
+		if isTempError(err) {
+			return err
+		}
+		tm.Postgresql.Logger.Errorf("permanent error updating schema for %s: %w", metricTable.name, err)
 	}
 
 	if len(missingCols) > 0 {
@@ -125,7 +131,7 @@ func (tm *TableManager) MatchSource(ctx context.Context, db dbh, rowSource *Tabl
 			}
 			colDefs[i] = col.Name + " " + col.Type
 		}
-		tm.Logger.Errorf("table \"%s\" is missing columns (omitting fields): %s",
+		tm.Logger.Errorf("table '%s' is missing columns (omitting fields): %s",
 			metricTable.name,
 			strings.Join(colDefs, ", "))
 	}
@@ -139,7 +145,8 @@ func (tm *TableManager) MatchSource(ctx context.Context, db dbh, rowSource *Tabl
 // (respectively).
 // metricsTableName and tagsTableName are passed to the templates.
 //
-// If the table cannot be modified, the returned column list is the columns which are missing from the table.
+// If the table cannot be modified, the returned column list is the columns which are missing from the table. This
+// includes when an error is returned.
 //nolint:revive
 func (tm *TableManager) EnsureStructure(
 	ctx context.Context,
@@ -219,13 +226,13 @@ func (tm *TableManager) EnsureStructure(
 	// wlock_db
 	tx, err := db.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return missingCols, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 	// It's possible to have multiple telegraf processes, in which we can't ensure they all lock tables in the same
 	// order. So to prevent possible deadlocks, we have to have a single lock for all schema modifications.
 	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", schemaAdvisoryLockID); err != nil {
-		return nil, err
+		return missingCols, err
 	}
 
 	// read_db
@@ -248,15 +255,15 @@ func (tm *TableManager) EnsureStructure(
 		tmpls = addColumnsTemplates
 	}
 	if err := tm.update(ctx, tx, tbl, tmpls, missingCols, metricsTable, tagsTable); err != nil {
-		return nil, err
+		return missingCols, err
 	}
 
 	if currCols, err = tm.getColumns(ctx, tx, tbl.name); err != nil {
-		return nil, err
+		return missingCols, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return nil, err
+		return missingCols, err
 	}
 
 	tbl.columns = currCols
