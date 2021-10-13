@@ -35,7 +35,8 @@ type Log struct {
 }
 
 func (l Log) String() string {
-	return fmt.Sprintf("%s: "+l.format, append([]interface{}{l.level}, l.args...)...)
+	// We have to use Errorf() as Sprintf() doesn't allow usage of %w.
+	return fmt.Errorf("%s: "+l.format, append([]interface{}{l.level}, l.args...)...).Error()
 }
 
 // LogAccumulator is a log collector that satisfies telegraf.Logger.
