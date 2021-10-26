@@ -36,8 +36,8 @@ func (cl *columnList) Remove(name string) bool {
 	cl.columns = append(cl.columns[:idx], cl.columns[idx+1:]...)
 	delete(cl.indices, name)
 
-	for idx, col := range cl.columns[idx:] {
-		cl.indices[col.Name] = idx
+	for i, col := range cl.columns[idx:] {
+		cl.indices[col.Name] = idx + i
 	}
 
 	return true
