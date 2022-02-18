@@ -127,14 +127,12 @@ func TestTableManager_MatchSource_UnsignedIntegers(t *testing.T) {
 	p := newPostgresqlTest(t)
 	p.UseUint8 = true
 	_ = p.Init()
-	require.NoError(t, p.Connect())
-
-	row := p.db.QueryRow(ctx, "SELECT count(*) FROM pg_extension WHERE extname='uint'")
-	var n int
-	require.NoError(t, row.Scan(&n))
-	if n == 0 {
-		t.Skipf("pguint extension is not installed")
-		t.SkipNow()
+	if err := p.Connect(); err != nil {
+		if strings.Contains(err.Error(), "retreiving OID for uint8 data type") {
+			t.Skipf("pguint extension is not installed")
+			t.SkipNow()
+		}
+		require.NoError(t, err)
 	}
 
 	metrics := []telegraf.Metric{
