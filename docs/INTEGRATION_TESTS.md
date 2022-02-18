@@ -52,7 +52,7 @@ Current areas we have integration tests:
 | Outputs: MQTT                      |                                           |
 | Outputs: Nats                      |                                           |
 | Outputs: NSQ                       |                                           |
-| Outputs: Postgresql                |                                           |                        
+| Outputs: Postgresql                |                                           |
 
 Areas we would benefit most from new integration tests:
 

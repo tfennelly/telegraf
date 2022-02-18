@@ -1,22 +1,22 @@
 # PostgreSQL Output Plugin
 
-This output plugin writes metrics to PostgreSQL (or compatible database). 
+This output plugin writes metrics to PostgreSQL (or compatible database).  
 The plugin manages the schema, automatically updating missing columns.
 
-# Configuration:
+## Configuration
 
 ```toml
 [[outputs.postgresql]]
-	## Specify connection address via the standard libpq connection string:
+  ## Specify connection address via the standard libpq connection string:
   ##   host=... user=... password=... sslmode=... dbname=...
-	## Or a URL:
+  ## Or a URL:
   ##   postgres://[user[:password]]@localhost[/dbname]\
   ##       ?sslmode=[disable|verify-ca|verify-full]
   ##
   ## All connection parameters are optional. Environment vars are also supported.
   ## e.g. PGPASSWORD, PGHOST, PGUSER, PGDATABASE 
   ## All supported vars can be found here:
-	##  https://www.postgresql.org/docs/current/libpq-envars.html
+  ##  https://www.postgresql.org/docs/current/libpq-envars.html
   ##
   ## Non-standard parameters:
   ##   pool_max_conns (default: 1) - Maximum size of connection pool for parallel (per-batch per-table) inserts.
@@ -24,7 +24,7 @@ The plugin manages the schema, automatically updating missing columns.
   ##   pool_max_conn_lifetime (default: 0s) - Maximum age of a connection before closing.
   ##   pool_max_conn_idle_time (default: 0s) - Maximum idle time of a connection before closing.
   ##   pool_health_check_period (default: 0s) - Duration between health checks on idle connections.
-	# connection = ""
+  # connection = ""
 
   ## Postgres schema to use.
   # schema = "public"
@@ -84,6 +84,7 @@ The plugin manages the schema, automatically updating missing columns.
 ```
 
 ### Concurrency
+
 By default the postgresql plugin does not utilize any concurrency. However it can for increased throughput. When concurrency is off, telegraf core handles things like retrying on failure, buffering, etc. When concurrency is used, these aspects have to be handled by the plugin.
 
 To enable concurrent writes to the database, set the `pool_max_conns` connection parameter to a value >1. When enabled, incoming batches will be split by measurement/table name. In addition, if a batch comes in and the previous batch has not completed, concurrency will be used for the new batch as well.
@@ -94,7 +95,8 @@ If all connections are utilized and the pool is exhausted, further incoming batc
 
 When using `tags_as_foreign_keys`, tags will be written to a separate table with a `tag_id` column used for joins. Each series (unique combination of tag values) gets its own entry in the tags table, and a unique `tag_id`.
 
-# Data types
+## Data types
+
 By default the postgresql plugin maps Influx data types to the following PostgreSQL types:
 
 | Influx                                                                                                       | PostgreSQL                                                                                         |
@@ -109,19 +111,21 @@ By default the postgresql plugin maps Influx data types to the following Postgre
 It is important to note that `uinteger` (unsigned 64-bit integer) is mapped to the `numeric` PostgreSQL data type. The `numeric` data type is an arbitrary precision decimal data type that is less efficient than `bigint`. This is necessary as the range of values for the Influx `uinteger` data type can exceed `bigint`, and thus cause errors when inserting data.
 
 ### pguint
-As a solution to the `uinteger`/`numeric` data type problem, there is a PostgreSQL extension that offers unsigned 64-bit integer support: https://github.com/petere/pguint.
+
+As a solution to the `uinteger`/`numeric` data type problem, there is a PostgreSQL extension that offers unsigned 64-bit integer support: [https://github.com/petere/pguint](https://github.com/petere/pguint).
 
 If this extension is installed, you can enable the `unsigned_integers` config parameter which will cause the plugin to use the `uint8` datatype instead of `numeric`.
 
+## Templating
 
-# Templating
 The postgresql plugin uses templates for the schema modification SQL statements. This allows for complete control of the schema by the user.
 
 Documentation on how to write templates can be found here:
-https://pkg.go.dev/github.com/influxdb/telegraf/plugins/outputs/postgresql/sqltemplate
+[https://pkg.go.dev/github.com/influxdb/telegraf/plugins/outputs/postgresql/sqltemplate](https://pkg.go.dev/github.com/influxdb/telegraf/plugins/outputs/postgresql/sqltemplate)
 
-## Samples
-### TimescaleDB
+### Samples
+
+#### TimescaleDB
 
 ```toml
 tags_as_foreign_keys = true
@@ -132,7 +136,8 @@ create_templates = [
 ]
 ```
 
-### Tag table with view
+#### Tag table with view
+
 This example enables `tags_as_foreign_keys`, but creates a postgres view to automatically join the metric & tag tables. The metric & tag tables are stored in a "telegraf" schema, with the view in the "public" schema.
 
 ```toml
@@ -154,7 +159,8 @@ tag_table_add_column_templates = [
 ]
 ```
 
-### Immutable data table
+#### Immutable data table
+
 Some PostgreSQL-compatible databases don't allow modification of table schema after initial creation. This example works around the limitation by creating a new table and then using a view to join them together.
 
 ```toml
@@ -187,7 +193,8 @@ tag_table_add_column_templates = [
 ]
 ```
 
-# Error handling
+## Error handling
+
 When the plugin encounters an error writing to the database, it attempts to determine whether the error is temporary or permanent. An error is considered temporary if it's possible that retrying the write will succeed. Some examples of temporary errors are things like connection interruption, deadlocks, etc. Permanent errors are things like invalid data type, insufficient permissions, etc.
 
 When an error is determined to be temporary, the plugin will retry the write with an incremental backoff.  
