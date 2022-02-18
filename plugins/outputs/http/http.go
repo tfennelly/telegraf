@@ -58,6 +58,7 @@ var sampleConfig = `
   # cookie_auth_method = "POST"
   # cookie_auth_username = "username"
   # cookie_auth_password = "pa$$word"
+  # cookie_auth_headers = '{"Content-Type": "application/json", "X-MY-HEADER":"hello"}'
   # cookie_auth_body = '{"username": "user", "password": "pa$$word", "authenticate": "me"}'
   ## cookie_auth_renewal not set or set to "0" will auth once and never renew the cookie
   # cookie_auth_renewal = "5m"
@@ -116,14 +117,15 @@ const (
 )
 
 type HTTP struct {
-	URL             string            `toml:"url"`
-	Method          string            `toml:"method"`
-	Username        string            `toml:"username"`
-	Password        string            `toml:"password"`
-	Headers         map[string]string `toml:"headers"`
-	ContentEncoding string            `toml:"content_encoding"`
-	UseBatchFormat  bool              `toml:"use_batch_format"`
-	AwsService      string            `toml:"aws_service"`
+	URL                     string            `toml:"url"`
+	Method                  string            `toml:"method"`
+	Username                string            `toml:"username"`
+	Password                string            `toml:"password"`
+	Headers                 map[string]string `toml:"headers"`
+	ContentEncoding         string            `toml:"content_encoding"`
+	UseBatchFormat          bool              `toml:"use_batch_format"`
+	AwsService              string            `toml:"aws_service"`
+	NonRetryableStatusCodes []int             `toml:"non_retryable_statuscodes"`
 	httpconfig.HTTPClientConfig
 	Log telegraf.Logger `toml:"-"`
 
@@ -277,6 +279,13 @@ func (h *HTTP) writeMetric(reqBody []byte) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		for _, nonRetryableStatusCode := range h.NonRetryableStatusCodes {
+			if resp.StatusCode == nonRetryableStatusCode {
+				h.Log.Errorf("Received non-retryable status %v. Metrics are lost.", resp.StatusCode)
+				return nil
+			}
+		}
+
 		errorLine := ""
 		scanner := bufio.NewScanner(io.LimitReader(resp.Body, maxErrMsgLen))
 		if scanner.Scan() {

@@ -2,6 +2,7 @@ package snmp
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,14 +19,21 @@ var m sync.Mutex
 var once sync.Once
 var cache = make(map[string]bool)
 
-func appendPath(path string) {
+type MibLoader interface {
+	loadModule(path string) error
+	appendPath(path string)
+}
+
+type GosmiMibLoader struct{}
+
+func (*GosmiMibLoader) appendPath(path string) {
 	m.Lock()
 	defer m.Unlock()
 
 	gosmi.AppendPath(path)
 }
 
-func loadModule(path string) error {
+func (*GosmiMibLoader) loadModule(path string) error {
 	m.Lock()
 	defer m.Unlock()
 
@@ -37,12 +45,51 @@ func ClearCache() {
 	cache = make(map[string]bool)
 }
 
-func LoadMibsFromPath(paths []string, log telegraf.Logger) error {
+//will give all found folders to gosmi and load in all modules found in the folders
+func LoadMibsFromPath(paths []string, log telegraf.Logger, loader MibLoader) error {
+	folders, err := walkPaths(paths, log)
+	if err != nil {
+		return err
+	}
+	for _, path := range folders {
+		loader.appendPath(path)
+		modules, err := ioutil.ReadDir(path)
+		if err != nil {
+			log.Warnf("Can't read directory %v", modules)
+		}
+
+		for _, info := range modules {
+			if info.Mode()&os.ModeSymlink != 0 {
+				target, err := filepath.EvalSymlinks(path)
+				if err != nil {
+					log.Warnf("Bad symbolic link %v", target)
+					continue
+				}
+				info, err = os.Lstat(filepath.Join(path, target))
+				if err != nil {
+					log.Warnf("Couldn't stat target %v", target)
+					continue
+				}
+				path = target
+			}
+			if info.Mode().IsRegular() {
+				err := loader.loadModule(info.Name())
+				if err != nil {
+					log.Warnf("module %v could not be loaded", info.Name())
+					continue
+				}
+			}
+		}
+	}
+	return nil
+}
+
+//should walk the paths given and find all folders
+func walkPaths(paths []string, log telegraf.Logger) ([]string, error) {
 	once.Do(gosmi.Init)
+	folders := []string{}
 
 	for _, mibPath := range paths {
-		folders := []string{}
-
 		// Check if we loaded that path already and skip it if so
 		m.Lock()
 		cached := cache[mibPath]
@@ -52,42 +99,39 @@ func LoadMibsFromPath(paths []string, log telegraf.Logger) error {
 			continue
 		}
 
-		appendPath(mibPath)
-		folders = append(folders, mibPath)
 		err := filepath.Walk(mibPath, func(path string, info os.FileInfo, err error) error {
-			// symlinks are files so we need to double check if any of them are folders
-			// Will check file vs directory later on
-			if info.Mode()&os.ModeSymlink != 0 {
-				link, err := os.Readlink(path)
-				if err != nil {
-					log.Warnf("Bad symbolic link %v", link)
+			if info == nil {
+				log.Warnf("No mibs found")
+				if os.IsNotExist(err) {
+					log.Warnf("MIB path doesn't exist: %q", mibPath)
+				} else if err != nil {
+					return err
 				}
-				folders = append(folders, link)
+				return nil
 			}
+
+			if info.Mode()&os.ModeSymlink != 0 {
+				target, err := filepath.EvalSymlinks(path)
+				if err != nil {
+					log.Warnf("Could not evaluate link %v", target)
+				}
+				info, err = os.Lstat(target)
+				if err != nil {
+					log.Warnf("Couldn't stat target %v", path)
+				}
+				path = target
+			}
+			if info.IsDir() {
+				folders = append(folders, path)
+			}
+
 			return nil
 		})
 		if err != nil {
-			return fmt.Errorf("Filepath could not be walked: %v", err)
-		}
-
-		for _, folder := range folders {
-			err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
-				// checks if file or directory
-				if info.IsDir() {
-					appendPath(path)
-				} else if info.Mode()&os.ModeSymlink == 0 {
-					if err := loadModule(info.Name()); err != nil {
-						log.Warn(err)
-					}
-				}
-				return nil
-			})
-			if err != nil {
-				return fmt.Errorf("Filepath could not be walked: %v", err)
-			}
+			return folders, fmt.Errorf("Filepath %q could not be walked: %v", mibPath, err)
 		}
 	}
-	return nil
+	return folders, nil
 }
 
 // The following is for snmp_trap
@@ -97,38 +141,39 @@ type MibEntry struct {
 }
 
 func TrapLookup(oid string) (e MibEntry, err error) {
-	var node gosmi.SmiNode
-	node, err = gosmi.GetNodeByOID(types.OidMustFromString(oid))
+	var givenOid types.Oid
+	if givenOid, err = types.OidFromString(oid); err != nil {
+		return e, fmt.Errorf("could not convert OID %s: %w", oid, err)
+	}
 
-	// ensure modules are loaded or node will be empty (might not error)
-	if err != nil {
+	// Get node name
+	var node gosmi.SmiNode
+	if node, err = gosmi.GetNodeByOID(givenOid); err != nil {
 		return e, err
 	}
+	e.OidText = node.Name
 
-	e.OidText = node.RenderQualified()
-
-	i := strings.Index(e.OidText, "::")
-	if i == -1 {
-		return e, fmt.Errorf("not found")
+	// Add not found OID part
+	if !givenOid.Equals(node.Oid) {
+		e.OidText += "." + givenOid[len(node.Oid):].String()
 	}
-	e.MibName = e.OidText[:i]
-	e.OidText = e.OidText[i+2:]
+
+	// Get module name
+	module := node.GetModule()
+	if module.Name != "<well-known>" {
+		e.MibName = module.Name
+	}
+
 	return e, nil
 }
 
 // The following is for snmp
 
-func GetIndex(oidNum string, mibPrefix string) (col []string, tagOids map[string]struct{}, err error) {
+func GetIndex(oidNum string, mibPrefix string, node gosmi.SmiNode) (col []string, tagOids map[string]struct{}, err error) {
 	// first attempt to get the table's tags
 	tagOids = map[string]struct{}{}
 
 	// mimcks grabbing INDEX {} that is returned from snmptranslate -Td MibName
-	node, err := gosmi.GetNodeByOID(types.OidMustFromString(oidNum))
-
-	if err != nil {
-		return []string{}, map[string]struct{}{}, fmt.Errorf("getting submask: %w", err)
-	}
-
 	for _, index := range node.GetIndex() {
 		//nolint:staticcheck //assaignment to nil map to keep backwards compatibilty
 		tagOids[mibPrefix+index.Name] = struct{}{}
@@ -136,34 +181,47 @@ func GetIndex(oidNum string, mibPrefix string) (col []string, tagOids map[string
 
 	// grabs all columns from the table
 	// mimmicks grabbing everything returned from snmptable -Ch -Cl -c public 127.0.0.1 oidFullName
-	col = node.GetRow().AsTable().ColumnOrder
+	_, col = node.GetColumns()
 
 	return col, tagOids, nil
 }
 
 //nolint:revive //Too many return variable but necessary
-func SnmpTranslateCall(oid string) (mibName string, oidNum string, oidText string, conversion string, err error) {
+func SnmpTranslateCall(oid string) (mibName string, oidNum string, oidText string, conversion string, node gosmi.SmiNode, err error) {
 	var out gosmi.SmiNode
 	var end string
 	if strings.ContainsAny(oid, "::") {
 		// split given oid
 		// for example RFC1213-MIB::sysUpTime.0
-		s := strings.Split(oid, "::")
+		s := strings.SplitN(oid, "::", 2)
+		// moduleName becomes RFC1213
+		moduleName := s[0]
+		module, err := gosmi.GetModule(moduleName)
+		if err != nil {
+			return oid, oid, oid, oid, gosmi.SmiNode{}, err
+		}
+		if s[1] == "" {
+			return "", oid, oid, oid, gosmi.SmiNode{}, fmt.Errorf("cannot parse %v\n", oid)
+		}
 		// node becomes sysUpTime.0
 		node := s[1]
 		if strings.ContainsAny(node, ".") {
-			s = strings.Split(node, ".")
+			s = strings.SplitN(node, ".", 2)
 			// node becomes sysUpTime
 			node = s[0]
 			end = "." + s[1]
 		}
 
-		out, err = gosmi.GetNode(node)
+		out, err = module.GetNode(node)
 		if err != nil {
-			return oid, oid, oid, oid, err
+			return oid, oid, oid, oid, out, err
 		}
 
-		oidNum = "." + out.RenderNumeric() + end
+		if oidNum = out.RenderNumeric(); oidNum == "" {
+			return oid, oid, oid, oid, out, fmt.Errorf("cannot make %v numeric, please ensure all imported mibs are in the path", oid)
+		}
+
+		oidNum = "." + oidNum + end
 	} else if strings.ContainsAny(oid, "abcdefghijklnmopqrstuvwxyz") {
 		//handle mixed oid ex. .iso.2.3
 		s := strings.Split(oid, ".")
@@ -171,7 +229,7 @@ func SnmpTranslateCall(oid string) (mibName string, oidNum string, oidText strin
 			if strings.ContainsAny(s[i], "abcdefghijklmnopqrstuvwxyz") {
 				out, err = gosmi.GetNode(s[i])
 				if err != nil {
-					return oid, oid, oid, oid, err
+					return oid, oid, oid, oid, out, err
 				}
 				s[i] = out.RenderNumeric()
 			}
@@ -185,7 +243,7 @@ func SnmpTranslateCall(oid string) (mibName string, oidNum string, oidText strin
 		// do not return the err as the oid is numeric and telegraf can continue
 		//nolint:nilerr
 		if err != nil || out.Name == "iso" {
-			return oid, oid, oid, oid, nil
+			return oid, oid, oid, oid, out, nil
 		}
 	}
 
@@ -208,10 +266,10 @@ func SnmpTranslateCall(oid string) (mibName string, oidNum string, oidText strin
 	oidText = out.RenderQualified()
 	i := strings.Index(oidText, "::")
 	if i == -1 {
-		return "", oid, oid, oid, fmt.Errorf("not found")
+		return "", oid, oid, oid, out, fmt.Errorf("not found")
 	}
 	mibName = oidText[:i]
 	oidText = oidText[i+2:] + end
 
-	return mibName, oidNum, oidText, conversion, nil
+	return mibName, oidNum, oidText, conversion, out, nil
 }

@@ -40,6 +40,7 @@ batch format by default.
   # cookie_auth_method = "POST"
   # cookie_auth_username = "username"
   # cookie_auth_password = "pa$$word"
+  # cookie_auth_headers = '{"Content-Type": "application/json", "X-MY-HEADER":"hello"}'
   # cookie_auth_body = '{"username": "user", "password": "pa$$word", "authenticate": "me"}'
   ## cookie_auth_renewal not set or set to "0" will auth once and never renew the cookie
   # cookie_auth_renewal = "5m"
@@ -89,6 +90,9 @@ batch format by default.
   #role_session_name = ""
   #profile = ""
   #shared_credential_file = ""
+
+  ## Optional list of statuscodes (<200 or >300) upon which requests should not be retried
+  # non_retryable_statuscodes = [409, 413]
 ```
 
 ### Optional Cookie Authentication Settings

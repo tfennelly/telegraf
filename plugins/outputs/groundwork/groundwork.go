@@ -1,6 +1,7 @@
 package groundwork
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/gwos/tcg/sdk/clients"
+	"github.com/gwos/tcg/sdk/logper"
 	"github.com/gwos/tcg/sdk/transit"
 	"github.com/hashicorp/go-uuid"
 
@@ -34,7 +36,15 @@ const sampleConfig = `
 
   ## The name of the tag that contains the hostname.
   # resource_tag = "host"
+
+  ## The name of the tag that contains the host group name.
+  # group_tag = "group"
 `
+
+type metricMeta struct {
+	group    string
+	resource string
+}
 
 type Groundwork struct {
 	Server              string          `toml:"url"`
@@ -43,6 +53,7 @@ type Groundwork struct {
 	Password            string          `toml:"password"`
 	DefaultHost         string          `toml:"default_host"`
 	DefaultServiceState string          `toml:"default_service_state"`
+	GroupTag            string          `toml:"group_tag"`
 	ResourceTag         string          `toml:"resource_tag"`
 	Log                 telegraf.Logger `toml:"-"`
 	client              clients.GWClient
@@ -85,6 +96,22 @@ func (g *Groundwork) Init() error {
 			IsDynamicInventory: true,
 		},
 	}
+
+	logper.SetLogger(
+		func(fields interface{}, format string, a ...interface{}) {
+			g.Log.Error(adaptLog(fields, format, a...))
+		},
+		func(fields interface{}, format string, a ...interface{}) {
+			g.Log.Warn(adaptLog(fields, format, a...))
+		},
+		func(fields interface{}, format string, a ...interface{}) {
+			g.Log.Info(adaptLog(fields, format, a...))
+		},
+		func(fields interface{}, format string, a ...interface{}) {
+			g.Log.Debug(adaptLog(fields, format, a...))
+		},
+		func() bool { return telegraf.Debug },
+	)
 	return nil
 }
 
@@ -105,28 +132,55 @@ func (g *Groundwork) Close() error {
 }
 
 func (g *Groundwork) Write(metrics []telegraf.Metric) error {
-	resourceToServicesMap := make(map[string][]transit.DynamicMonitoredService)
+	groupMap := make(map[string][]transit.ResourceRef)
+	resourceToServicesMap := make(map[string][]transit.MonitoredService)
 	for _, metric := range metrics {
-		resource, service, err := g.parseMetric(metric)
+		meta, service, err := g.parseMetric(metric)
 		if err != nil {
 			g.Log.Errorf("%v", err)
 			continue
 		}
+		resource := meta.resource
 		resourceToServicesMap[resource] = append(resourceToServicesMap[resource], *service)
+
+		group := meta.group
+		if len(group) != 0 {
+			resRef := transit.ResourceRef{
+				Name: resource,
+				Type: transit.ResourceTypeHost,
+			}
+			if refs, ok := groupMap[group]; ok {
+				refs = append(refs, resRef)
+				groupMap[group] = refs
+			} else {
+				groupMap[group] = []transit.ResourceRef{resRef}
+			}
+		}
 	}
 
-	var resources []transit.DynamicMonitoredResource
+	groups := make([]transit.ResourceGroup, 0, len(groupMap))
+	for groupName, refs := range groupMap {
+		groups = append(groups, transit.ResourceGroup{
+			GroupName: groupName,
+			Resources: refs,
+			Type:      transit.HostGroup,
+		})
+	}
+
+	var resources []transit.MonitoredResource
 	for resourceName, services := range resourceToServicesMap {
-		resources = append(resources, transit.DynamicMonitoredResource{
+		resources = append(resources, transit.MonitoredResource{
 			BaseResource: transit.BaseResource{
-				BaseTransitData: transit.BaseTransitData{
+				BaseInfo: transit.BaseInfo{
 					Name: resourceName,
-					Type: transit.Host,
+					Type: transit.ResourceTypeHost,
 				},
 			},
-			Status:        transit.HostUp,
-			LastCheckTime: transit.NewTimestamp(),
-			Services:      services,
+			MonitoredInfo: transit.MonitoredInfo{
+				Status:        transit.HostUp,
+				LastCheckTime: transit.NewTimestamp(),
+			},
+			Services: services,
 		})
 	}
 
@@ -134,7 +188,7 @@ func (g *Groundwork) Write(metrics []telegraf.Metric) error {
 	if err != nil {
 		return err
 	}
-	requestJSON, err := json.Marshal(transit.DynamicResourcesWithServicesRequest{
+	requestJSON, err := json.Marshal(transit.ResourcesWithServicesRequest{
 		Context: &transit.TracerContext{
 			AppType:    "TELEGRAF",
 			AgentID:    g.AgentID,
@@ -143,7 +197,7 @@ func (g *Groundwork) Write(metrics []telegraf.Metric) error {
 			Version:    transit.ModelVersion,
 		},
 		Resources: resources,
-		Groups:    nil,
+		Groups:    groups,
 	})
 
 	if err != nil {
@@ -152,7 +206,7 @@ func (g *Groundwork) Write(metrics []telegraf.Metric) error {
 
 	_, err = g.client.SendResourcesWithMetrics(context.Background(), requestJSON)
 	if err != nil {
-		return fmt.Errorf("error while sending: %v", err)
+		return fmt.Errorf("error while sending: %w", err)
 	}
 
 	return nil
@@ -165,6 +219,7 @@ func (g *Groundwork) Description() string {
 func init() {
 	outputs.Add("groundwork", func() telegraf.Output {
 		return &Groundwork{
+			GroupTag:            "group",
 			ResourceTag:         "host",
 			DefaultHost:         "telegraf",
 			DefaultServiceState: string(transit.ServiceOk),
@@ -172,7 +227,9 @@ func init() {
 	})
 }
 
-func (g *Groundwork) parseMetric(metric telegraf.Metric) (string, *transit.DynamicMonitoredService, error) {
+func (g *Groundwork) parseMetric(metric telegraf.Metric) (metricMeta, *transit.MonitoredService, error) {
+	group, _ := metric.GetTag(g.GroupTag)
+
 	resource := g.DefaultHost
 	if value, present := metric.GetTag(g.ResourceTag); present {
 		resource = value
@@ -214,16 +271,18 @@ func (g *Groundwork) parseMetric(metric telegraf.Metric) (string, *transit.Dynam
 
 	lastCheckTime := transit.NewTimestamp()
 	lastCheckTime.Time = metric.Time()
-	serviceObject := transit.DynamicMonitoredService{
-		BaseTransitData: transit.BaseTransitData{
+	serviceObject := transit.MonitoredService{
+		BaseInfo: transit.BaseInfo{
 			Name:  service,
-			Type:  transit.Service,
+			Type:  transit.ResourceTypeService,
 			Owner: resource,
 		},
-		Status:           transit.MonitorStatus(status),
-		LastCheckTime:    lastCheckTime,
-		LastPlugInOutput: message,
-		Metrics:          nil,
+		MonitoredInfo: transit.MonitoredInfo{
+			Status:           transit.MonitorStatus(status),
+			LastCheckTime:    lastCheckTime,
+			LastPluginOutput: message,
+		},
+		Metrics: nil,
 	}
 
 	for _, value := range metric.FieldList() {
@@ -234,7 +293,7 @@ func (g *Groundwork) parseMetric(metric telegraf.Metric) (string, *transit.Dynam
 				Label:      value.Key + "_wn",
 				Value: &transit.TypedValue{
 					ValueType:   transit.DoubleType,
-					DoubleValue: warning,
+					DoubleValue: &warning,
 				},
 			})
 		}
@@ -244,15 +303,19 @@ func (g *Groundwork) parseMetric(metric telegraf.Metric) (string, *transit.Dynam
 				Label:      value.Key + "_cr",
 				Value: &transit.TypedValue{
 					ValueType:   transit.DoubleType,
-					DoubleValue: critical,
+					DoubleValue: &critical,
 				},
 			})
 		}
 
-		typedValue := new(transit.TypedValue)
-		err := typedValue.FromInterface(value.Value)
-		if err != nil {
-			return "", nil, err
+		typedValue := transit.NewTypedValue(value.Value)
+		if typedValue == nil {
+			g.Log.Warnf("could not convert type %T, skipping field %s: %v", value.Value, value.Key, value.Value)
+			continue
+		}
+		if typedValue.ValueType == transit.StringType {
+			g.Log.Warnf("string values are not supported, skipping field %s: %q", value.Key, value.Value)
+			continue
 		}
 
 		serviceObject.Metrics = append(serviceObject.Metrics, transit.TimeSeries{
@@ -263,7 +326,7 @@ func (g *Groundwork) parseMetric(metric telegraf.Metric) (string, *transit.Dynam
 			},
 			Value:      typedValue,
 			Unit:       transit.UnitType(unitType),
-			Thresholds: &thresholds,
+			Thresholds: thresholds,
 		})
 	}
 
@@ -276,7 +339,7 @@ func (g *Groundwork) parseMetric(metric telegraf.Metric) (string, *transit.Dynam
 		serviceObject.Status = serviceStatus
 	}
 
-	return resource, &serviceObject, nil
+	return metricMeta{resource: resource, group: group}, &serviceObject, nil
 }
 
 func validStatus(status string) bool {
@@ -286,4 +349,47 @@ func validStatus(status string) bool {
 		return true
 	}
 	return false
+}
+
+func adaptLog(fields interface{}, format string, a ...interface{}) string {
+	buf := &bytes.Buffer{}
+	if format != "" {
+		_, _ = fmt.Fprintf(buf, format, a...)
+	}
+	fmtField := func(k string, v interface{}) {
+		format := " %s:"
+		if len(k) == 0 {
+			format = " "
+		}
+		if _, ok := v.(int); ok {
+			format += "%d"
+		} else {
+			format += "%q"
+		}
+		_, _ = fmt.Fprintf(buf, format, k, v)
+	}
+	if ff, ok := fields.(interface {
+		LogFields() (map[string]interface{}, map[string][]byte)
+	}); ok {
+		m1, m2 := ff.LogFields()
+		for k, v := range m1 {
+			fmtField(k, v)
+		}
+		for k, v := range m2 {
+			fmtField(k, v)
+		}
+	} else if ff, ok := fields.(map[string]interface{}); ok {
+		for k, v := range ff {
+			fmtField(k, v)
+		}
+	} else if ff, ok := fields.([]interface{}); ok {
+		for _, v := range ff {
+			fmtField("", v)
+		}
+	}
+	out := buf.Bytes()
+	if len(out) > 1 {
+		out = append(bytes.ToUpper(out[0:1]), out[1:]...)
+	}
+	return string(out)
 }
