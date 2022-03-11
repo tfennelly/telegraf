@@ -78,6 +78,76 @@ func TestTableManager_EnsureStructure_alter(t *testing.T) {
 	assert.EqualValues(t, cols[2], tblCols["baz"])
 }
 
+func TestTableManager_EnsureStructure_overflowTableName(t *testing.T) {
+	p := newPostgresqlTest(t)
+	require.NoError(t, p.Connect())
+
+	tbl := p.tableManager.table("ăăăăăăăăăăăăăăăăăăăăăăăăăăăăăăăă") // 32 2-byte unicode characters = 64 bytes
+	cols := []utils.Column{
+		p.columnFromField("foo", 0),
+	}
+	_, err := p.tableManager.EnsureStructure(
+		ctx,
+		p.db,
+		tbl,
+		cols,
+		p.CreateTemplates,
+		p.AddColumnTemplates,
+		tbl,
+		nil,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "table name too long")
+	assert.False(t, isTempError(err))
+}
+
+func TestTableManager_EnsureStructure_overflowTagName(t *testing.T) {
+	p := newPostgresqlTest(t)
+	require.NoError(t, p.Connect())
+
+	tbl := p.tableManager.table(t.Name())
+	cols := []utils.Column{
+		p.columnFromTag("ăăăăăăăăăăăăăăăăăăăăăăăăăăăăăăăă", "a"), // 32 2-byte unicode characters = 64 bytes
+		p.columnFromField("foo", 0),
+	}
+	_, err := p.tableManager.EnsureStructure(
+		ctx,
+		p.db,
+		tbl,
+		cols,
+		p.CreateTemplates,
+		p.AddColumnTemplates,
+		tbl,
+		nil,
+	)
+	require.Error(t, err)
+	assert.False(t, isTempError(err))
+}
+
+func TestTableManager_EnsureStructure_overflowFieldName(t *testing.T) {
+	p := newPostgresqlTest(t)
+	require.NoError(t, p.Connect())
+
+	tbl := p.tableManager.table(t.Name())
+	cols := []utils.Column{
+		p.columnFromField("foo", 0),
+		p.columnFromField("ăăăăăăăăăăăăăăăăăăăăăăăăăăăăăăăă", 0),
+	}
+	missingCols, err := p.tableManager.EnsureStructure(
+		ctx,
+		p.db,
+		tbl,
+		cols,
+		p.CreateTemplates,
+		p.AddColumnTemplates,
+		tbl,
+		nil,
+	)
+	require.NoError(t, err)
+	assert.Len(t, missingCols, 1)
+	assert.Equal(t, cols[1], missingCols[0])
+}
+
 func TestTableManager_getColumns(t *testing.T) {
 	p := newPostgresqlTest(t)
 	require.NoError(t, p.Connect())

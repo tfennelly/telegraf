@@ -176,6 +176,22 @@ func (tm *TableManager) EnsureStructure(
 		return nil, nil
 	}
 
+	// check that the missing columns are columns that can be added
+	addColumns := make([]utils.Column, 0, len(missingCols))
+	var invalidColumns []utils.Column
+	for _, col := range missingCols {
+		if tm.validateColumnName(col.Name) {
+			addColumns = append(addColumns, col)
+			continue
+		}
+
+		if col.Role == utils.TagColType {
+			return nil, fmt.Errorf("column name too long: \"%s\"", col.Name)
+		}
+		tm.Postgresql.Logger.Errorf("column name too long: \"%s\"", col.Name)
+		invalidColumns = append(invalidColumns, col)
+	}
+
 	// wlock
 	// We also need to lock the other table as it may be referenced by a template.
 	// To prevent deadlock, the metric & tag table must always be locked in the same order: 1) Tag, 2) Metric
@@ -197,9 +213,9 @@ func (tm *TableManager) EnsureStructure(
 
 	// read
 	currCols = tbl.columns
-	missingCols = diffMissingColumns(currCols, columns)
-	if len(missingCols) == 0 {
-		return nil, nil
+	addColumns = diffMissingColumns(currCols, addColumns)
+	if len(addColumns) == 0 {
+		return invalidColumns, nil
 	}
 
 	// read_db
@@ -208,31 +224,34 @@ func (tm *TableManager) EnsureStructure(
 		return nil, err
 	}
 	tbl.columns = currCols
-	missingCols = diffMissingColumns(currCols, columns)
-	if len(missingCols) == 0 {
+	addColumns = diffMissingColumns(currCols, addColumns)
+	if len(addColumns) == 0 {
 		tbl.columns = currCols
-		return nil, nil
+		return invalidColumns, nil
 	}
 
 	if len(currCols) == 0 && len(createTemplates) == 0 {
 		// can't create
-		return missingCols, nil
+		return columns, nil
 	}
 	if len(currCols) != 0 && len(addColumnsTemplates) == 0 {
 		// can't add
-		return missingCols, nil
+		return append(addColumns, invalidColumns...), nil
+	}
+	if len(currCols) == 0 && !tm.validateTableName(tbl.name) {
+		return nil, fmt.Errorf("table name too long: %s", tbl.name)
 	}
 
 	// wlock_db
 	tx, err := db.Begin(ctx)
 	if err != nil {
-		return missingCols, err
+		return append(addColumns, invalidColumns...), err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 	// It's possible to have multiple telegraf processes, in which we can't ensure they all lock tables in the same
 	// order. So to prevent possible deadlocks, we have to have a single lock for all schema modifications.
 	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", schemaAdvisoryLockID); err != nil {
-		return missingCols, err
+		return append(addColumns, invalidColumns...), err
 	}
 
 	// read_db
@@ -241,9 +260,9 @@ func (tm *TableManager) EnsureStructure(
 	}
 	tbl.columns = currCols
 	if currCols != nil {
-		missingCols = diffMissingColumns(currCols, columns)
-		if len(missingCols) == 0 {
-			return nil, nil
+		addColumns = diffMissingColumns(currCols, addColumns)
+		if len(addColumns) == 0 {
+			return invalidColumns, nil
 		}
 	}
 
@@ -254,16 +273,16 @@ func (tm *TableManager) EnsureStructure(
 	} else {
 		tmpls = addColumnsTemplates
 	}
-	if err := tm.update(ctx, tx, tbl, tmpls, missingCols, metricsTable, tagsTable); err != nil {
-		return missingCols, err
+	if err := tm.update(ctx, tx, tbl, tmpls, addColumns, metricsTable, tagsTable); err != nil {
+		return append(addColumns, invalidColumns...), err
 	}
 
 	if currCols, err = tm.getColumns(ctx, tx, tbl.name); err != nil {
-		return missingCols, err
+		return append(addColumns, invalidColumns...), err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return missingCols, err
+		return append(addColumns, invalidColumns...), err
 	}
 
 	tbl.columns = currCols
@@ -271,7 +290,7 @@ func (tm *TableManager) EnsureStructure(
 	// wunlock_db (deferred)
 	// wunlock (deferred)
 
-	return nil, nil
+	return invalidColumns, nil
 }
 
 func (tm *TableManager) getColumns(ctx context.Context, db dbh, name string) (map[string]utils.Column, error) {
@@ -370,6 +389,19 @@ func (tm *TableManager) update(ctx context.Context,
 	}
 
 	return nil
+}
+
+const maxIdentifierLength = 63
+
+func (tm *TableManager) validateTableName(name string) bool {
+	if tm.Postgresql.TagsAsForeignKeys {
+		return len([]byte(name))+len([]byte(tm.Postgresql.TagTableSuffix)) <= maxIdentifierLength
+	}
+	return len([]byte(name)) <= maxIdentifierLength
+}
+
+func (tm *TableManager) validateColumnName(name string) bool {
+	return len([]byte(name)) <= maxIdentifierLength
 }
 
 // diffMissingColumns filters srcColumns to the ones not present in dbColumns.
