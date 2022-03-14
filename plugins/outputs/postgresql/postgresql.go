@@ -362,6 +362,8 @@ func (p *Postgresql) writeSequential(tableSources map[string]*TableSource) error
 				if err := sp.Rollback(p.dbContext); err != nil {
 					return err
 				}
+			} else {
+				return nil
 			}
 		}
 		// savepoints do not need to be committed (released), so save the round trip and skip it

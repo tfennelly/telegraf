@@ -454,6 +454,22 @@ func TestWrite_sequentialPermError(t *testing.T) {
 	assert.True(t, haveError, "write error not found in log")
 }
 
+// Test that in a bach with only 1 sub-batch, that we don't return an error.
+func TestWrite_sequentialSinglePermError(t *testing.T) {
+	p := newPostgresqlTest(t)
+	require.NoError(t, p.Connect())
+
+	metrics := []telegraf.Metric{
+		newMetric(t, "", MSS{}, MSI{"v": 1}),
+	}
+	require.NoError(t, p.Write(metrics))
+
+	metrics = []telegraf.Metric{
+		newMetric(t, "", MSS{}, MSI{"v": "a"}),
+	}
+	require.NoError(t, p.Write(metrics))
+}
+
 // Test that the bad metric is dropped, and the rest of the batch succeeds.
 func TestWrite_concurrentPermError(t *testing.T) {
 	p := newPostgresqlTest(t)
