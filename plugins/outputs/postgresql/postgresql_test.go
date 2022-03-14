@@ -690,6 +690,29 @@ func TestWrite_tagError_foreignConstraint(t *testing.T) {
 	assert.EqualValues(t, 1, dump[0]["v"])
 }
 
+func TestWrite_utf8(t *testing.T) {
+	p := newPostgresqlTest(t)
+	p.TagsAsForeignKeys = true
+	require.NoError(t, p.Connect())
+
+	metrics := []telegraf.Metric{
+		newMetric(t, "Ѧ𝙱Ƈᗞ",
+			MSS{"ăѣ𝔠ծ": "𝘈Ḇ𝖢𝕯٤ḞԍНǏ𝙅ƘԸⲘ𝙉০Ρ𝗤Ɍ𝓢ȚЦ𝒱Ѡ𝓧ƳȤ"},
+			MSI{"АḂⲤ𝗗": "𝘢ƀ𝖼ḋếᵮℊ𝙝Ꭵ𝕛кιṃդⱺ𝓅𝘲𝕣𝖘ŧ𝑢ṽẉ𝘅ყž𝜡"},
+		),
+	}
+	assert.NoError(t, p.Write(metrics))
+
+	dump := dbTableDump(t, p.db, "Ѧ𝙱Ƈᗞ")
+	require.Len(t, dump, 1)
+	assert.EqualValues(t, "𝘢ƀ𝖼ḋếᵮℊ𝙝Ꭵ𝕛кιṃդⱺ𝓅𝘲𝕣𝖘ŧ𝑢ṽẉ𝘅ყž𝜡", dump[0]["АḂⲤ𝗗"])
+
+	dumpTags := dbTableDump(t, p.db, "Ѧ𝙱Ƈᗞ"+p.TagTableSuffix)
+	require.Len(t, dumpTags, 1)
+	assert.EqualValues(t, dump[0]["tag_id"], dumpTags[0]["tag_id"])
+	assert.EqualValues(t, "𝘈Ḇ𝖢𝕯٤ḞԍНǏ𝙅ƘԸⲘ𝙉০Ρ𝗤Ɍ𝓢ȚЦ𝒱Ѡ𝓧ƳȤ", dumpTags[0]["ăѣ𝔠ծ"])
+}
+
 func TestWrite_UnsignedIntegers(t *testing.T) {
 	p := newPostgresqlTest(t)
 	p.UseUint8 = true
