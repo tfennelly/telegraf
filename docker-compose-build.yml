@@ -1,0 +1,27 @@
+version: '3.6'
+
+#
+# Build a telegraf image that can be used for debugging. Make the relevant
+# changes/additions to the telegraf code in this branch and then build the
+# docker image using this compose file as follows:
+#
+#   $ docker-compose -f docker-compose-build.yml build
+#
+# The above will build the docker image cloudbees/telegraf:latest.
+#
+# Use this as the base (FROM) image for your telegraf service.
+#
+# To interactively denug the generated image:
+#
+#   $ docker run -it --entrypoint /bin/bash cloudbees/telegraf
+#
+
+services:
+  home-telegraf:
+    build:
+      context: .
+    image: cloudbees/telegraf
+    container_name: cloudbees-telegraf
+
+volumes:
+  gopath: {}
