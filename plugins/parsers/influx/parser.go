@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log" //nolint:revive // Allow exceptional but valid use of log here.
 	"strings"
 	"sync"
 	"time"
@@ -208,6 +209,8 @@ func (sp *StreamParser) Next() (telegraf.Metric, error) {
 			buf:        sp.machine.LineText(),
 		}
 	}
+
+	log.Println("*** Next()")
 
 	metric, err := sp.handler.Metric()
 	if err != nil {

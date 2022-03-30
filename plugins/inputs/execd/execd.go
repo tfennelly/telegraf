@@ -129,6 +129,8 @@ func (e *Execd) cmdReadOut(out io.Reader) {
 func (e *Execd) cmdReadOutStream(out io.Reader) {
 	parser := influx.NewStreamParser(out)
 
+	e.Log.Info("*** Using cmdReadOutStream.")
+
 	for {
 		metric, err := parser.Next()
 		if err != nil {
