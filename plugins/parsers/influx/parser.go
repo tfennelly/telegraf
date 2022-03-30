@@ -200,17 +200,19 @@ func (sp *StreamParser) Next() (telegraf.Metric, error) {
 	}
 
 	if err != nil {
+		lineText := sp.machine.LineText()
+
+		log.Printf("*** Error parsing [%s] at position %d\n", lineText, sp.machine.LineNumber())
+
 		return nil, &ParseError{
 			Offset:     sp.machine.Position(),
 			LineOffset: sp.machine.LineOffset(),
 			LineNumber: sp.machine.LineNumber(),
 			Column:     sp.machine.Column(),
 			msg:        err.Error(),
-			buf:        sp.machine.LineText(),
+			buf:        lineText,
 		}
 	}
-
-	log.Println("*** Next()")
 
 	metric, err := sp.handler.Metric()
 	if err != nil {
